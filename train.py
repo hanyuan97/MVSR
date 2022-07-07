@@ -97,7 +97,7 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output_filename", type=str, default="model.pth")
     parser.add_argument("-m", "--maps", type=int, default=96)
     parser.add_argument("-s", "--save", action="store_true")
-    parser.add_argument("--weight", type=str, default="model.pth")
+    parser.add_argument("--weight", type=str, default="model")
     parser.add_argument("-l", "--last_epoch", type=int, default=0)
     parser.add_argument("-w", "--workers", type=int, default=1)
     
