@@ -52,6 +52,6 @@ if __name__ == "__main__":
     opt = model(lr)
     opt = opt[0].cpu().detach().numpy()*255
     opt = opt.transpose(1, 2, 0)
-    cv2.imwrite("test1.png", opt[:, :, :3])
-    cv2.imwrite("test2.png", opt[:, :, 3:6])
-    cv2.imwrite("test3.png", opt[:, :, 6:9])
+    cv2.imwrite(f"test1_{weight}.png", opt[:, :, :3])
+    cv2.imwrite(f"test2_{weight}.png", opt[:, :, 3:6])
+    cv2.imwrite(f"test3_{weight}.png", opt[:, :, 6:9])

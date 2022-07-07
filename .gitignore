@@ -173,3 +173,4 @@ output/*
 *.npz
 *.csv
 *.data
+*.zip

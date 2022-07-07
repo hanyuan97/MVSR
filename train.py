@@ -43,13 +43,15 @@ def init(args):
     log_file = open(f"./loss_log/x264SR_{args.maps}.log", "w")
 
     model.to(device)
+    if args.last_epoch != 0:
+        model.load_state_dict(torch.load(f"./weights/{args.maps}/{args.weight}_{args.last_epoch}.pth"))
     loss_fn = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.00001)
     return model, loss_fn, optimizer, training_loader, validation_loader, log_file
     
     
-def train(EPOCH, model, loss_fn, optimizer, training_loader, validation_loader, log_file):
-    for epoch in range(1, EPOCH+1):
+def train(EPOCH, model, loss_fn, optimizer, training_loader, validation_loader, log_file, args):
+    for epoch in range(args.last_epoch + 1, EPOCH+1):
         print(f"Epoch: {epoch}/{EPOCH}")
         model.train()
         train_loss = train_one_epoch(epoch)
@@ -95,13 +97,15 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output_filename", type=str, default="model.pth")
     parser.add_argument("-m", "--maps", type=int, default=96)
     parser.add_argument("-s", "--save", action="store_true")
+    parser.add_argument("--weight", type=str, default="model.pth")
+    parser.add_argument("-l", "--last_epoch", type=int, default=0)
     parser.add_argument("-w", "--workers", type=int, default=1)
     
     args = parser.parse_args()
     
     model, loss_fn, optimizer, training_loader, validation_loader, log_file = init(args)
     
-    train(args.epoch, model, loss_fn, optimizer, training_loader, validation_loader, log_file)
+    train(args.epoch, model, loss_fn, optimizer, training_loader, validation_loader, log_file, args)
     
     #if args.save:
     #    torch.save(model.state_dict(), f"./weights/{args.output_filename}")
