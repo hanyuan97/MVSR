@@ -33,7 +33,7 @@ def init(args):
                             pin_memory=True)
 
     net = SRX264(maps=args.maps)
-    net_d = NLayerDiscriminator(9)
+    net_d = NLayerDiscriminator(3)
     net_f = VGGFeatureExtractor(feature_layer=34, use_bn=False,
                                 use_input_norm=True, device=device)
     net_f.eval()
@@ -47,12 +47,14 @@ def init(args):
     log_file = open(f"./loss_log/x264SR_{args.maps}.log", "w")
     cri_gan = GANLoss('ragan', 1.0, 0.0).to(device)
     net.to(device)
+    net_d.to(device)
+    net_f.to(device)
     if args.last_epoch != 0:
         net.load_state_dict(torch.load(f"./weights/{args.maps}/{args.weight}_{args.last_epoch}.pth"))
     loss_fn_g = nn.L1Loss().to(device)
     loss_fn_d = nn.L1Loss().to(device)
-    optimizer_g = optim.Adam(net.parameters(), lr=0.00001)
-    optimizer_d = optim.Adam(net.parameters(), lr=0.00001)
+    optimizer_g = optim.Adam(net.parameters(), lr=1e-4)
+    optimizer_d = optim.Adam(net.parameters(), lr=1e-4)
     return net, net_d, net_f, cri_gan, loss_fn_g, loss_fn_d, optimizer_g, optimizer_d, training_loader, validation_loader, log_file
     
     
@@ -63,11 +65,13 @@ def train(EPOCH, net, loss_fn_g, loss_fn_d, optimizer_g, optimizer_d, training_l
         train_loss_g, train_loss_d = train_one_epoch(epoch)
         net.eval()
         val_loss = val_one_epoch(epoch)
-        train_loss = train_loss/len(training_loader.dataset)
+        train_loss_g = train_loss_g/len(training_loader.dataset)
+        train_loss_d = train_loss_d/len(training_loader.dataset)
         val_loss = val_loss/len(validation_loader.dataset)
         print(f"Training Loss: {train_loss_g:.6f}, {train_loss_d:.6f} \tValidation Loss: {val_loss:.6f}")
         log_file.write(f"{train_loss_g:.6f},{train_loss_d:.6f},{val_loss:.6f}\n")
-        torch.save(net.state_dict(), f"./weights/model_{epoch}.pth")
+        torch.save(net.state_dict(), f"./weights/model_g_{epoch}.pth")
+        torch.save(net_d.state_dict(), f"./weights/model_d_{epoch}.pth")
         
     log_file.close()
     return net
@@ -86,12 +90,12 @@ def train_one_epoch(epoch_index):
             p.requires_grad = False
         
         loss_g = l1_w * loss_fn_g(fake_H, real_H)
-        real_fea = net_f(real_H).detach()
-        fake_fea = net_f(fake_H)
+        real_fea = net_f(real_H.view(-1, 3, 256, 448)).detach()
+        fake_fea = net_f(fake_H.view(-1, 3, 256, 448))
         loss_g += loss_fn_g(fake_fea, real_fea)
         
-        pred_g_fake = net_d(fake_H)
-        pred_d_real = net_d(real_H).detach()
+        pred_g_fake = net_d(fake_H.view(-1, 3, 256, 448))
+        pred_d_real = net_d(real_H.view(-1, 3, 256, 448)).detach()
         loss_g += gan_w * (
                 cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
                 cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
@@ -102,8 +106,8 @@ def train_one_epoch(epoch_index):
         
         for p in net_d.parameters():
             p.requires_grad = True
-        pred_d_real = net_d(real_H)
-        pred_d_fake = net_d(fake_H.detach())
+        pred_d_real = net_d(real_H.view(-1, 3, 256, 448))
+        pred_d_fake = net_d(fake_H.detach().view(-1, 3, 256, 448))
         l_d_real = cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
         l_d_fake = cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
         loss_d = (l_d_real + l_d_fake) / 2
@@ -119,7 +123,7 @@ def val_one_epoch(epoch_index):
         data, label = data.to(device, dtype=torch.float), label.to(device, dtype=torch.float)
         with torch.no_grad():
             output = net(data)
-        loss = loss_fn_g(output*255, label*255)
+        loss = loss_fn_d(output*255, label*255)
         running_loss += loss.item()
     return running_loss
 
