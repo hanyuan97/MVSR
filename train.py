@@ -5,8 +5,9 @@ import torch.optim as optim
 import torch.nn as nn
 import numpy as np
 from torch.utils.data import DataLoader, random_split, Subset
+from loss import GANLoss, VGGFeatureExtractor
 from dataset import SRDataset
-from model import SRX264
+from model import SRX264, NLayerDiscriminator
 from tqdm import tqdm
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -31,8 +32,11 @@ def init(args):
                             num_workers=workers,
                             pin_memory=True)
 
-    model = SRX264(maps=args.maps)
-        
+    net = SRX264(maps=args.maps)
+    net_d = NLayerDiscriminator(9)
+    net_f = VGGFeatureExtractor(feature_layer=34, use_bn=False,
+                                use_input_norm=True, device=device)
+    net_f.eval()
     if not os.path.exists("./loss_log"):
         os.mkdir("./loss_log")
     
@@ -41,50 +45,81 @@ def init(args):
     
     
     log_file = open(f"./loss_log/x264SR_{args.maps}.log", "w")
-
-    model.to(device)
+    cri_gan = GANLoss('ragan', 1.0, 0.0).to(device)
+    net.to(device)
     if args.last_epoch != 0:
-        model.load_state_dict(torch.load(f"./weights/{args.maps}/{args.weight}_{args.last_epoch}.pth"))
-    loss_fn = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.00001)
-    return model, loss_fn, optimizer, training_loader, validation_loader, log_file
+        net.load_state_dict(torch.load(f"./weights/{args.maps}/{args.weight}_{args.last_epoch}.pth"))
+    loss_fn_g = nn.L1Loss().to(device)
+    loss_fn_d = nn.L1Loss().to(device)
+    optimizer_g = optim.Adam(net.parameters(), lr=0.00001)
+    optimizer_d = optim.Adam(net.parameters(), lr=0.00001)
+    return net, net_d, net_f, cri_gan, loss_fn_g, loss_fn_d, optimizer_g, optimizer_d, training_loader, validation_loader, log_file
     
     
-def train(EPOCH, model, loss_fn, optimizer, training_loader, validation_loader, log_file, args):
+def train(EPOCH, net, loss_fn_g, loss_fn_d, optimizer_g, optimizer_d, training_loader, validation_loader, log_file, args):
     for epoch in range(args.last_epoch + 1, EPOCH+1):
         print(f"Epoch: {epoch}/{EPOCH}")
-        model.train()
-        train_loss = train_one_epoch(epoch)
-        model.eval()
+        net.train()
+        train_loss_g, train_loss_d = train_one_epoch(epoch)
+        net.eval()
         val_loss = val_one_epoch(epoch)
         train_loss = train_loss/len(training_loader.dataset)
         val_loss = val_loss/len(validation_loader.dataset)
-        print(f"Training Loss: {train_loss:.6f} \tValidation Loss: {val_loss:.6f}")
-        log_file.write(f"{train_loss:.6f},{val_loss:.6f}\n")
-        torch.save(model.state_dict(), f"./weights/model_{epoch}.pth")
+        print(f"Training Loss: {train_loss_g:.6f}, {train_loss_d:.6f} \tValidation Loss: {val_loss:.6f}")
+        log_file.write(f"{train_loss_g:.6f},{train_loss_d:.6f},{val_loss:.6f}\n")
+        torch.save(net.state_dict(), f"./weights/model_{epoch}.pth")
         
     log_file.close()
-    return model
+    return net
     
 def train_one_epoch(epoch_index):
-    running_loss = 0.
+    running_loss_g = 0.
+    running_loss_d = 0.
     last_loss = 0.
-    for data, label in tqdm(training_loader):
-        data, label = data.to(device, dtype=torch.float), label.to(device, dtype=torch.float)
-        optimizer.zero_grad()
-        output = model(data)
-        loss = loss_fn(output*255, label*255)
-        loss.backward()
-        optimizer.step()
-        running_loss += loss.item()
-    return running_loss
+    for data, real_H in tqdm(training_loader):
+        data, real_H = data.to(device, dtype=torch.float), real_H.to(device, dtype=torch.float)
+        optimizer_g.zero_grad()
+        optimizer_d.zero_grad()
+        fake_H = net(data)
+        # if epoch_index > d_init_iter:
+        for p in net_d.parameters():
+            p.requires_grad = False
+        
+        loss_g = l1_w * loss_fn_g(fake_H, real_H)
+        real_fea = net_f(real_H).detach()
+        fake_fea = net_f(fake_H)
+        loss_g += loss_fn_g(fake_fea, real_fea)
+        
+        pred_g_fake = net_d(fake_H)
+        pred_d_real = net_d(real_H).detach()
+        loss_g += gan_w * (
+                cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
+                cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
+        
+        loss_g.backward()
+        optimizer_g.step()
+        running_loss_g += loss_g.item()
+        
+        for p in net_d.parameters():
+            p.requires_grad = True
+        pred_d_real = net_d(real_H)
+        pred_d_fake = net_d(fake_H.detach())
+        l_d_real = cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
+        l_d_fake = cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
+        loss_d = (l_d_real + l_d_fake) / 2
+        loss_d.backward()
+        optimizer_d.step()
+        running_loss_d += loss_d.item()
+    return running_loss_g, running_loss_d
 
 def val_one_epoch(epoch_index):
     running_loss = 0.
+    
     for data, label in tqdm(validation_loader):
         data, label = data.to(device, dtype=torch.float), label.to(device, dtype=torch.float)
-        output = model(data)
-        loss = loss_fn(output*255, label*255)
+        with torch.no_grad():
+            output = net(data)
+        loss = loss_fn_g(output*255, label*255)
         running_loss += loss.item()
     return running_loss
 
@@ -102,10 +137,12 @@ if __name__ == "__main__":
     parser.add_argument("-w", "--workers", type=int, default=1)
     
     args = parser.parse_args()
+    d_init_iter = 0
+    l1_w = 1e-2
+    gan_w = 5e-3
+    net, net_d, net_f, cri_gan, loss_fn_g, loss_fn_d, optimizer_g, optimizer_d, training_loader, validation_loader, log_file = init(args)
     
-    model, loss_fn, optimizer, training_loader, validation_loader, log_file = init(args)
-    
-    train(args.epoch, model, loss_fn, optimizer, training_loader, validation_loader, log_file, args)
+    train(args.epoch, net, loss_fn_g, loss_fn_d, optimizer_g, optimizer_d, training_loader, validation_loader, log_file, args)
     
     #if args.save:
     #    torch.save(model.state_dict(), f"./weights/{args.output_filename}")
