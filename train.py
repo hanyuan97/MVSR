@@ -49,8 +49,18 @@ def init(args):
     net.to(device)
     net_d.to(device)
     net_f.to(device)
-    if args.last_epoch != 0:
-        net.load_state_dict(torch.load(f"./weights/{args.maps}/{args.weight}_{args.last_epoch}.pth"))
+    
+    if args.resume != 0:
+        model_path = f"./weights"
+        if args.gan:
+            model_path += "/gan"
+        model_path += f"/{args.maps}"
+        if args.gan:
+            net.load_state_dict(torch.load(f"{model_path}/{args.weight}_g_{args.resume}.pth"))
+            net_d.load_state_dict(torch.load(f"{model_path}/{args.weight}_d_{args.resume}.pth"))
+        else:
+            net.load_state_dict(torch.load(f"{model_path}/{args.weight}_{args.resume}.pth"))
+            
     loss_fn_g = nn.L1Loss().to(device)
     loss_fn_d = nn.L1Loss().to(device)
     optimizer_g = optim.Adam(net.parameters(), lr=1e-4, betas=(0.9, 0.999))
@@ -59,7 +69,7 @@ def init(args):
     
     
 def train(EPOCH, net, loss_fn_g, loss_fn_d, optimizer_g, optimizer_d, training_loader, validation_loader, log_file, args):
-    for epoch in range(args.last_epoch + 1, EPOCH+1):
+    for epoch in range(args.resume + 1, EPOCH+1):
         print(f"Epoch: {epoch}/{EPOCH}")
         net.train()
         train_loss_g, train_loss_d = train_one_epoch(epoch)
@@ -136,8 +146,9 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output_filename", type=str, default="model.pth")
     parser.add_argument("-m", "--maps", type=int, default=96)
     parser.add_argument("-s", "--save", action="store_true")
+    parser.add_argument("-g", "--gan", action="store_true")
     parser.add_argument("--weight", type=str, default="model")
-    parser.add_argument("-l", "--last_epoch", type=int, default=0)
+    parser.add_argument("-r", "--resume", type=int, default=0)
     parser.add_argument("-w", "--workers", type=int, default=1)
     
     args = parser.parse_args()
