@@ -1,5 +1,6 @@
 import argparse
 import os
+import cv2
 import torch
 import torch.optim as optim
 import torch.nn as nn
@@ -49,7 +50,6 @@ def init(args):
     net.to(device)
     net_d.to(device)
     net_f.to(device)
-    
     if args.resume != 0:
         model_path = f"./weights"
         if args.gan:
@@ -61,8 +61,8 @@ def init(args):
         else:
             net.load_state_dict(torch.load(f"{model_path}/{args.weight}_{args.resume}.pth"))
             
-    loss_fn_g = nn.L1Loss().to(device)
-    loss_fn_d = nn.L1Loss().to(device)
+    loss_fn_g = nn.L1Loss().to(device) if args.loss_fun else nn.MSELoss().to(device)
+    loss_fn_d = nn.L1Loss().to(device) if args.loss_fun else nn.MSELoss().to(device)
     optimizer_g = optim.Adam(net.parameters(), lr=1e-4, betas=(0.9, 0.999))
     optimizer_d = optim.Adam(net_d.parameters(), lr=1e-4, betas=(0.9, 0.999))
     return net, net_d, net_f, cri_gan, loss_fn_g, loss_fn_d, optimizer_g, optimizer_d, training_loader, validation_loader, log_file
@@ -72,14 +72,17 @@ def train(EPOCH, net, loss_fn_g, loss_fn_d, optimizer_g, optimizer_d, training_l
     for epoch in range(args.resume + 1, EPOCH+1):
         print(f"Epoch: {epoch}/{EPOCH}")
         net.train()
+        net_d.train()
         train_loss_g, train_loss_d = train_one_epoch(epoch)
         net.eval()
-        val_loss = val_one_epoch(epoch)
-        train_loss_g = train_loss_g/len(training_loader.dataset)
-        train_loss_d = train_loss_d/len(training_loader.dataset)
-        val_loss = val_loss/len(validation_loader.dataset)
-        print(f"Training Loss: {train_loss_g:.6f}, {train_loss_d:.6f} \tValidation Loss: {val_loss:.6f}")
-        log_file.write(f"{train_loss_g:.6f},{train_loss_d:.6f},{val_loss:.6f}\n")
+        net_d.eval()
+        val_loss_g, val_loss_d = val_one_epoch(epoch)
+        train_loss_g = train_loss_g / len(training_loader.dataset)
+        train_loss_d = train_loss_d / len(training_loader.dataset)
+        val_loss_g = val_loss_g / len(validation_loader.dataset)
+        val_loss_d = val_loss_d / len(validation_loader.dataset)
+        print(f"Training Loss: {train_loss_g:.6f}, {train_loss_d:.6f} \tValidation Loss: {val_loss_g:.6f}, {val_loss_d:.6f}")
+        log_file.write(f"{train_loss_g:.6f},{train_loss_d:.6f},{val_loss_g:.6f},{val_loss_d:.6f}\n")
         torch.save(net.state_dict(), f"./weights/model_g_{epoch}.pth")
         torch.save(net_d.state_dict(), f"./weights/model_d_{epoch}.pth")
         
@@ -99,16 +102,22 @@ def train_one_epoch(epoch_index):
         for p in net_d.parameters():
             p.requires_grad = False
         
-        loss_g = l1_w * loss_fn_g(fake_H, real_H)
+        loss_pix = loss_fn_g(fake_H*255, real_H*255)
+        loss_g = pix_w * loss_pix
         real_fea = net_f(real_H.view(-1, 3, 256, 448)).detach()
-        fake_fea = net_f(fake_H.view(-1, 3, 256, 448))
-        loss_g += loss_fn_g(fake_fea, real_fea)
+        fake_fea = net_f(fake_H.view(-1, 3, 256, 448))        
+        loss_fea = loss_fn_g(fake_fea, real_fea)
+        loss_g += loss_fea
         
         pred_g_fake = net_d(fake_H.view(-1, 3, 256, 448))
         pred_d_real = net_d(real_H.view(-1, 3, 256, 448)).detach()
-        loss_g += gan_w * (
-                cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
-                cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
+        loss_gan = (cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
+                    cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
+        
+        loss_g += gan_w * loss_gan
+        # print('loss_pix: ', loss_pix.item())
+        # print('loss_fea: ', loss_fea.item())
+        # print('loss_gan: ', loss_gan)
         
         loss_g.backward()
         optimizer_g.step()
@@ -121,21 +130,32 @@ def train_one_epoch(epoch_index):
         l_d_real = cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
         l_d_fake = cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
         loss_d = (l_d_real + l_d_fake) / 2
+        # real_img = fake_H[0].cpu().detach().numpy().transpose(1, 2, 0) * 255
+        # cv2.imwrite("im1.png", real_img[:, :, :3])
+        # cv2.imwrite("im2.png", real_img[:, :, 3:6])
+        # cv2.imwrite("im3.png", real_img[:, :, 6:9])
         loss_d.backward()
         optimizer_d.step()
         running_loss_d += loss_d.item()
     return running_loss_g, running_loss_d
 
 def val_one_epoch(epoch_index):
-    running_loss = 0.
-    
-    for data, label in tqdm(validation_loader):
-        data, label = data.to(device, dtype=torch.float), label.to(device, dtype=torch.float)
+    running_loss_g = 0.
+    running_loss_d = 0.
+    for data, real_H in tqdm(validation_loader):
+        data, real_H = data.to(device, dtype=torch.float), real_H.to(device, dtype=torch.float)
         with torch.no_grad():
-            output = net(data)
-        loss = loss_fn_d(output*255, label*255)
-        running_loss += loss.item()
-    return running_loss
+            fake_H = net(data)
+            pred_d_real = net_d(real_H.view(-1, 3, 256, 448))
+            pred_d_fake = net_d(fake_H.detach().view(-1, 3, 256, 448))
+            
+        l_d_real = cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
+        l_d_fake = cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
+        loss_d = (l_d_real + l_d_fake) / 2
+        loss = loss_fn_d(fake_H*255, real_H*255)
+        running_loss_g += loss.item()
+        running_loss_d += loss_d.item()
+    return running_loss_g, running_loss_d
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -144,6 +164,7 @@ if __name__ == "__main__":
     parser.add_argument("-vb", "--val_batch", type=int, default=32)
     parser.add_argument("-tr", "--train_ratio", type=float, default=0.8)
     parser.add_argument("-o", "--output_filename", type=str, default="model.pth")
+    parser.add_argument("-lf", "--loss_fun", type=str, default="L1")
     parser.add_argument("-m", "--maps", type=int, default=96)
     parser.add_argument("-s", "--save", action="store_true")
     parser.add_argument("-g", "--gan", action="store_true")
@@ -153,7 +174,7 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     d_init_iter = 0
-    l1_w = 1e-2
+    pix_w = 1e-2
     gan_w = 5e-3
     net, net_d, net_f, cri_gan, loss_fn_g, loss_fn_d, optimizer_g, optimizer_d, training_loader, validation_loader, log_file = init(args)
     
