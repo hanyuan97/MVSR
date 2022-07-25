@@ -61,8 +61,8 @@ def init(args):
         else:
             net.load_state_dict(torch.load(f"{model_path}/{args.weight}_{args.resume}.pth"))
             
-    loss_fn_g = nn.L1Loss().to(device) if args.loss_fun else nn.MSELoss().to(device)
-    loss_fn_d = nn.L1Loss().to(device) if args.loss_fun else nn.MSELoss().to(device)
+    loss_fn_g = nn.L1Loss().to(device) if args.loss_fun == 'L1' else nn.MSELoss().to(device)
+    loss_fn_d = nn.L1Loss().to(device) if args.loss_fun == 'L1' else nn.MSELoss().to(device)
     optimizer_g = optim.Adam(net.parameters(), lr=1e-4, betas=(0.9, 0.999))
     optimizer_d = optim.Adam(net_d.parameters(), lr=1e-4, betas=(0.9, 0.999))
     return net, net_d, net_f, cri_gan, loss_fn_g, loss_fn_d, optimizer_g, optimizer_d, training_loader, validation_loader, log_file
