@@ -34,7 +34,7 @@ def init(args):
                             pin_memory=True)
 
     net = SRX264(maps=args.maps)
-    
+    net_d = NLayerDiscriminator(3)
     net_f = VGGFeatureExtractor(feature_layer=34, use_bn=False,
                                 use_input_norm=True, device=device)
     net_f.eval()
@@ -45,9 +45,10 @@ def init(args):
         os.mkdir("./weights")
     
     
-    log_file = open(f"./loss_log/x264SR_{args.maps}.log", "w")
     
-    net.to(device)    
+    cri_gan = GANLoss('ragan', 1.0, 0.0).to(device)
+    net.to(device)
+    net_d.to(device)
     net_f.to(device)
     if args.resume != 0:
         model_path = f"./weights"
@@ -56,121 +57,102 @@ def init(args):
         model_path += f"/{args.maps}"
         if args.gan:
             net.load_state_dict(torch.load(f"{model_path}/{args.weight}_g_{args.resume}.pth"))
+            net_d.load_state_dict(torch.load(f"{model_path}/{args.weight}_d_{args.resume}.pth"))
         else:
             net.load_state_dict(torch.load(f"{model_path}/{args.weight}_{args.resume}.pth"))
             
     loss_fn_g = nn.L1Loss().to(device) if args.loss_fun == 'L1' else nn.MSELoss().to(device)
-    
+    loss_fn_d = nn.L1Loss().to(device) if args.loss_fun == 'L1' else nn.MSELoss().to(device)
     optimizer_g = optim.Adam(net.parameters(), lr=1e-4, betas=(0.9, 0.999))
-    
-    return net, net_f, loss_fn_g, optimizer_g, training_loader, validation_loader, log_file
-
-def init_d(args):
-    net_d = NLayerDiscriminator(3)
-    net_d.to(device)
-    if args.resume != 0:
-        model_path = f"./weights"
-        if args.gan:
-            model_path += "/gan"
-        model_path += f"/{args.maps}"
-        net_d.load_state_dict(torch.load(f"{model_path}/{args.weight}_d_{args.resume}.pth"))
     optimizer_d = optim.Adam(net_d.parameters(), lr=1e-4, betas=(0.9, 0.999))
-    cri_gan = GANLoss('ragan', 1.0, 0.0).to(device)
-    return net_d, optimizer_d, cri_gan
+    return net, net_d, net_f, cri_gan, loss_fn_g, loss_fn_d, optimizer_g, optimizer_d, training_loader, validation_loader
     
-def train(EPOCH, training_loader, validation_loader, log_file, args):
+    
+def train(EPOCH, net, loss_fn_g, loss_fn_d, optimizer_g, optimizer_d, training_loader, validation_loader, log_file, args):
     for epoch in range(args.resume + 1, EPOCH+1):
         print(f"Epoch: {epoch}/{EPOCH}")
-        net.train()
-        if args.gan:
-            net_d.train()
-        train_loss_g, train_loss_d = train_one_epoch(epoch, args.gan)
         net.eval()
-        if args.gan:
-            net_d.eval()
-        val_loss_g, val_loss_d = val_one_epoch(epoch, args.gan)
+        net_d.eval()
+        train_loss_g, train_loss_d = train_one_epoch(epoch)
+        #val_loss_g, val_loss_d = val_one_epoch(epoch)
         train_loss_g = train_loss_g / len(training_loader.dataset)
         train_loss_d = train_loss_d / len(training_loader.dataset)
-        val_loss_g = val_loss_g / len(validation_loader.dataset)
-        val_loss_d = val_loss_d / len(validation_loader.dataset)
-        if args.gan:
-            torch.save(net.state_dict(), f"./weights/model_g_{epoch}.pth")
-            torch.save(net_d.state_dict(), f"./weights/model_d_{epoch}.pth")
-            print(f"Training Loss: {train_loss_g:.6f}, {train_loss_d:.6f} \tValidation Loss: {val_loss_g:.6f}, {val_loss_d:.6f}")
-            log_file.write(f"{train_loss_g:.6f},{train_loss_d:.6f},{val_loss_g:.6f},{val_loss_d:.6f}\n")
-        else:
-            torch.save(net.state_dict(), f"./weights/model_{epoch}.pth")
-            print(f"Training Loss: {train_loss_g:.6f} \tValidation Loss: {val_loss_g:.6f}")
-            log_file.write(f"{train_loss_g:.6f},{val_loss_g:.6f}\n")
+        #val_loss_g = val_loss_g / len(validation_loader.dataset)
+        #val_loss_d = val_loss_d / len(validation_loader.dataset)
+        #print(f"Training Loss: {train_loss_g:.6f}, {train_loss_d:.6f} \tValidation Loss: {val_loss_g:.6f}, {val_loss_d:.6f}")
+        # log_file.write(f"{train_loss_g:.6f},{train_loss_d:.6f},{val_loss_g:.6f},{val_loss_d:.6f}\n")
+        #torch.save(net.state_dict(), f"./weights/model_g_{epoch}.pth")
+        #torch.save(net_d.state_dict(), f"./weights/model_d_{epoch}.pth")
         
-    log_file.close()
+    
     return net
     
-def train_one_epoch(epoch_index, is_gan=False):
+def train_one_epoch(epoch_index):
     running_loss_g = 0.
     running_loss_d = 0.
     last_loss = 0.
-    for data, real_H in tqdm(training_loader):
+    for data, real_H in training_loader:
         data, real_H = data.to(device, dtype=torch.float), real_H.to(device, dtype=torch.float)
         optimizer_g.zero_grad()
-        if is_gan:
-            optimizer_d.zero_grad()
-            for p in net_d.parameters():
-                p.requires_grad = False
+        optimizer_d.zero_grad()
         fake_H = net(data)
         # if epoch_index > d_init_iter:
+        for p in net_d.parameters():
+            p.requires_grad = False
+        
         loss_pix = loss_fn_g(fake_H*255, real_H*255)
         loss_g = pix_w * loss_pix
         real_fea = net_f(real_H.view(-1, 3, 256, 448)).detach()
+        print(real_fea.shape)
         fake_fea = net_f(fake_H.view(-1, 3, 256, 448))        
         loss_fea = loss_fn_g(fake_fea, real_fea)
         loss_g += loss_fea
-        if is_gan:
-            pred_g_fake = net_d(fake_H.view(-1, 3, 256, 448))
-            pred_d_real = net_d(real_H.view(-1, 3, 256, 448)).detach()
-            loss_gan = (cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
-                        cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
-            loss_g += gan_w * loss_gan
         
+        pred_g_fake = net_d(fake_H.view(-1, 3, 256, 448))
+        pred_d_real = net_d(real_H.view(-1, 3, 256, 448)).detach()
+        loss_gan = (cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
+                    cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
         
-        loss_g.backward()
-        optimizer_g.step()
+        loss_g += gan_w * loss_gan
+        print('loss_pix: ', loss_pix.item(), loss_pix.item()*pix_w)
+        print('loss_fea: ', loss_fea.item())
+        print('loss_gan: ', loss_gan.item(), loss_gan.item()*gan_w)
+        print('total loss: ', loss_g.item())
+        log_file.write(f"{loss_pix.item()},{loss_pix.item()*pix_w},{loss_fea.item()},{loss_gan.item()},{loss_gan.item()*gan_w},{loss_g.item()}\n")
+        # loss_g.backward()
+        # optimizer_g.step()
         running_loss_g += loss_g.item()
-        if is_gan:
-            for p in net_d.parameters():
-                p.requires_grad = True
-            pred_d_real = net_d(real_H.view(-1, 3, 256, 448))
-            pred_d_fake = net_d(fake_H.detach().view(-1, 3, 256, 448))
-            l_d_real = cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
-            l_d_fake = cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
-            loss_d = (l_d_real + l_d_fake) / 2
-            # real_img = fake_H[0].cpu().detach().numpy().transpose(1, 2, 0) * 255
-            # cv2.imwrite("im1.png", real_img[:, :, :3])
-            # cv2.imwrite("im2.png", real_img[:, :, 3:6])
-            # cv2.imwrite("im3.png", real_img[:, :, 6:9])
-            loss_d.backward()
-            optimizer_d.step()
-            running_loss_d += loss_d.item()
+        
+        pred_d_real = net_d(real_H.view(-1, 3, 256, 448))
+        pred_d_fake = net_d(fake_H.detach().view(-1, 3, 256, 448))
+        l_d_real = cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
+        l_d_fake = cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
+        loss_d = (l_d_real + l_d_fake) / 2
+        # real_img = fake_H[0].cpu().detach().numpy().transpose(1, 2, 0) * 255
+        # cv2.imwrite("im1.png", real_img[:, :, :3])
+        # cv2.imwrite("im2.png", real_img[:, :, 3:6])
+        # cv2.imwrite("im3.png", real_img[:, :, 6:9])
+        # loss_d.backward()
+        # optimizer_d.step()
+        running_loss_d += loss_d.item()
     return running_loss_g, running_loss_d
 
-def val_one_epoch(epoch_index, is_gan=False):
+def val_one_epoch(epoch_index):
     running_loss_g = 0.
     running_loss_d = 0.
     for data, real_H in tqdm(validation_loader):
         data, real_H = data.to(device, dtype=torch.float), real_H.to(device, dtype=torch.float)
         with torch.no_grad():
             fake_H = net(data)
-            if is_gan:
-                pred_d_real = net_d(real_H.view(-1, 3, 256, 448))
-                pred_d_fake = net_d(fake_H.detach().view(-1, 3, 256, 448))
-        if is_gan:    
-            l_d_real = cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
-            l_d_fake = cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
-            loss_d = (l_d_real + l_d_fake) / 2
-            running_loss_d += loss_d.item()
+            pred_d_real = net_d(real_H.view(-1, 3, 256, 448))
+            pred_d_fake = net_d(fake_H.detach().view(-1, 3, 256, 448))
             
-        loss = loss_fn_g(fake_H*255, real_H*255)
+        l_d_real = cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
+        l_d_fake = cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
+        loss_d = (l_d_real + l_d_fake) / 2
+        loss = loss_fn_d(fake_H*255, real_H*255)
         running_loss_g += loss.item()
+        running_loss_d += loss_d.item()
     return running_loss_g, running_loss_d
 
 if __name__ == "__main__":
@@ -192,12 +174,13 @@ if __name__ == "__main__":
     d_init_iter = 0
     pix_w = 1e-2
     gan_w = 5e-3
-    net, net_f, loss_fn_g, optimizer_g, training_loader, validation_loader, log_file = init(args)
-    if args.gan:
-        net_d, optimizer_d, cri_gan = init_d(args)
-    
-    train(args.epoch, training_loader, validation_loader, log_file, args)
-    
+    log_file = open(f"./loss_log/gan_loss_{args.loss_fun}_{args.maps}.log", "w")
+    for i in range(1, 21):
+        args.resume = i
+        args.epoch = i+1
+        net, net_d, net_f, cri_gan, loss_fn_g, loss_fn_d, optimizer_g, optimizer_d, training_loader, validation_loader = init(args)
+        train(args.epoch, net, loss_fn_g, loss_fn_d, optimizer_g, optimizer_d, training_loader, validation_loader, log_file, args)
+    log_file.close()
     #if args.save:
     #    torch.save(model.state_dict(), f"./weights/{args.output_filename}")
     #    print(f"model save to: ./weights/{args.output_filename}")
