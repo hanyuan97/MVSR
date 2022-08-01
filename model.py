@@ -5,11 +5,11 @@ from utils.gdn import GDN
 import math
 
 class SRX264(nn.Module):
-    def __init__(self, scale_factor = 2, maps = 96) -> None:
+    def __init__(self, scale_factor = 2, maps = 96, ch=13) -> None:
         super(SRX264, self).__init__()
         upsample_block_num = int(math.log(scale_factor, 2))
         self.block1 = nn.Sequential(
-            nn.ConvTranspose2d(13, maps, kernel_size=9, padding=4),
+            nn.ConvTranspose2d(ch, maps, kernel_size=9, padding=4),
             nn.PReLU()
         )
         self.block2 = ResidualBlock(maps)

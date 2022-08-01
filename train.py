@@ -33,7 +33,12 @@ def init(args):
                             num_workers=workers,
                             pin_memory=True)
 
-    net = SRX264(maps=args.maps)
+    if args.mv:
+        ch = 13
+    else:
+        ch = 9
+    
+    net = SRX264(maps=args.maps, ch=ch)
     
     net_f = VGGFeatureExtractor(feature_layer=34, use_bn=False,
                                 use_input_norm=True, device=device)
@@ -184,6 +189,7 @@ if __name__ == "__main__":
     parser.add_argument("-m", "--maps", type=int, default=96)
     parser.add_argument("-s", "--save", action="store_true")
     parser.add_argument("-g", "--gan", action="store_true")
+    parser.add_argument("-mv", "--mv", action="store_true")
     parser.add_argument("--weight", type=str, default="model")
     parser.add_argument("-r", "--resume", type=int, default=0)
     parser.add_argument("-w", "--workers", type=int, default=1)
