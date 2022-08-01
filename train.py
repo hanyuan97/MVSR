@@ -15,7 +15,7 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 def init(args):
     EPOCH, train_batch, val_batch, train_ratio, workers = args.epoch, args.batch, args.val_batch, args.train_ratio, args.workers
-    train_dataset = SRDataset()
+    train_dataset = SRDataset(is_mv=args.mv)
     # valid_dataset = SRDataset(filename="sep_testlist.txt")
     train_num = int(len(train_dataset) * args.train_ratio)
     val_num = len(train_dataset) - train_num
