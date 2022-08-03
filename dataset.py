@@ -20,12 +20,12 @@ class SRDataset(Dataset):
         target_frame = (index % 5) + 1
         lr_path = f"{self.lr_dir}/{target_dir:0>4}"
         hr_path = f"{self.hr_dir}/{target_dir:0>4}"
-        f1_lr = (cv2.imread(f"{lr_path}/im{target_frame}.png").astype('float')/255).transpose(2, 0, 1)
-        f2_lr = (cv2.imread(f"{lr_path}/im{target_frame+1}.png").astype('float')/255).transpose(2, 0, 1)
-        f3_lr = (cv2.imread(f"{lr_path}/im{target_frame+2}.png").astype('float')/255).transpose(2, 0, 1)
-        f1_hr = (cv2.imread(f"{hr_path}/im{target_frame}.png").astype('float')/255).transpose(2, 0, 1)
-        f2_hr = (cv2.imread(f"{hr_path}/im{target_frame+1}.png").astype('float')/255).transpose(2, 0, 1)
-        f3_hr = (cv2.imread(f"{hr_path}/im{target_frame+2}.png").astype('float')/255).transpose(2, 0, 1)
+        f1_lr = (cv2.imread(f"{lr_path}/im{target_frame}.png")[...,::-1].astype('float')/255).transpose(2, 0, 1)
+        f2_lr = (cv2.imread(f"{lr_path}/im{target_frame+1}.png")[...,::-1].astype('float')/255).transpose(2, 0, 1)
+        f3_lr = (cv2.imread(f"{lr_path}/im{target_frame+2}.png")[...,::-1].astype('float')/255).transpose(2, 0, 1)
+        f1_hr = (cv2.imread(f"{hr_path}/im{target_frame}.png")[...,::-1].astype('float')/255).transpose(2, 0, 1)
+        f2_hr = (cv2.imread(f"{hr_path}/im{target_frame+1}.png")[...,::-1].astype('float')/255).transpose(2, 0, 1)
+        f3_hr = (cv2.imread(f"{hr_path}/im{target_frame+2}.png")[...,::-1].astype('float')/255).transpose(2, 0, 1)
         if self.is_mv:
             f2_mv = (np.load(f"{lr_path}/mv{target_frame+1}.npy")).astype('float').transpose(2, 0, 1)
             f3_mv = (np.load(f"{lr_path}/mv{target_frame+2}.npy")).astype('float').transpose(2, 0, 1)

@@ -11,7 +11,8 @@ from tqdm import tqdm
 from piqa import PSNR, SSIM, MS_SSIM, LPIPS, HaarPSI
 
 def to_CHW_cuda(img):
-    return torch.from_numpy(img.transpose(2, 0, 1)).cuda().unsqueeze(0)/255
+    im = img.copy()
+    return torch.from_numpy(im.transpose(2, 0, 1)).cuda().unsqueeze(0)/255
 
 if __name__ == "__main__":
     
@@ -63,13 +64,13 @@ if __name__ == "__main__":
         hr_path = f"../dataset/vimeo90k/hr/{i}"
         log_file.write(f"{i}")
         for target_frame in target_frames:
-            lr1 = cv2.imread(f"{lr_path}/im{target_frame}.png")
+            lr1 = cv2.imread(f"{lr_path}/im{target_frame}.png")[...,::-1]
             f1_lr = (lr1.astype('float')/255).transpose(2, 0, 1)
             f2_mv = (np.load(f"{lr_path}/mv{target_frame+1}.npy")).astype('float').transpose(2, 0, 1)
-            lr2 = cv2.imread(f"{lr_path}/im{target_frame+1}.png")
+            lr2 = cv2.imread(f"{lr_path}/im{target_frame+1}.png")[...,::-1]
             f2_lr = (lr2.astype('float')/255).transpose(2, 0, 1)
             f3_mv = (np.load(f"{lr_path}/mv{target_frame+2}.npy")).astype('float').transpose(2, 0, 1)
-            lr3 = cv2.imread(f"{lr_path}/im{target_frame+2}.png")
+            lr3 = cv2.imread(f"{lr_path}/im{target_frame+2}.png")[...,::-1]
             f3_lr = (lr3.astype('float')/255).transpose(2, 0, 1)
             lr = np.concatenate([f1_lr, f2_mv, f2_lr, f3_mv, f3_lr])
             lr = torch.from_numpy(lr).to(device, dtype=torch.float)
@@ -80,9 +81,9 @@ if __name__ == "__main__":
             
             # BGR
             if target_frame != 5:
-                hr1 = cv2.imread(f"{hr_path}/im{target_frame}.png")
+                hr1 = cv2.imread(f"{hr_path}/im{target_frame}.png")[...,::-1]
                 hr1_cuda = to_CHW_cuda(hr1)
-                hr2 = cv2.imread(f"{hr_path}/im{target_frame+1}.png")
+                hr2 = cv2.imread(f"{hr_path}/im{target_frame+1}.png")[...,::-1]
                 hr2_cuda = to_CHW_cuda(hr2)
                 sr1 = np.round(opt[:, :, :3]).astype('uint8')
                 sr1_cuda = to_CHW_cuda(sr1)
@@ -100,10 +101,10 @@ if __name__ == "__main__":
                 sr_lpips_alex2 = lpips_alex(sr2_cuda, hr2_cuda).item()
                 log_file.write(f",im{target_frame+0},{sr_psnr1},{sr_ssim1},{sr_ms_ssim1},{sr_lpips_alex1},{sr_lpips_vgg1}\n")
                 log_file.write(f",im{target_frame+1},{sr_psnr2},{sr_ssim2},{sr_ms_ssim2},{sr_lpips_alex2},{sr_lpips_vgg2}\n")
-                cv2.imwrite(f"show/{i}/{args.maps}/{args.batch}/im{target_frame+0}.png", sr1)
-                cv2.imwrite(f"show/{i}/{args.maps}/{args.batch}/im{target_frame+1}.png", sr2)
+                cv2.imwrite(f"show/{i}/{args.maps}/{args.batch}/im{target_frame+0}.png", sr1[...,::-1])
+                cv2.imwrite(f"show/{i}/{args.maps}/{args.batch}/im{target_frame+1}.png", sr2[...,::-1])
                 
-            hr3 = cv2.imread(f"{hr_path}/im{target_frame+2}.png")
+            hr3 = cv2.imread(f"{hr_path}/im{target_frame+2}.png")[...,::-1]
             hr3_cuda = to_CHW_cuda(hr3)
             sr3 = np.round(opt[:, :, 6:9]).astype('uint8')
             sr3_cuda = to_CHW_cuda(sr3)
@@ -113,5 +114,5 @@ if __name__ == "__main__":
             sr_ssim3 = cal_ssim(sr3, hr3)
             sr_ms_ssim3 = cal_ms_ssim(hr3, sr3)
             log_file.write(f",im{target_frame+2},{sr_psnr3},{sr_ssim3},{sr_ms_ssim3},{sr_lpips_alex3},{sr_lpips_vgg3}\n")
-            cv2.imwrite(f"show/{i}/{args.maps}/{args.batch}/im{target_frame+2}.png", sr3)
+            cv2.imwrite(f"show/{i}/{args.maps}/{args.batch}/im{target_frame+2}.png", sr3[...,::-1])
         log_file.close()
