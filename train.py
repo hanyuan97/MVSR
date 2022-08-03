@@ -86,14 +86,15 @@ def init_d(args):
 def train(EPOCH, training_loader, validation_loader, log_file, args):
     for epoch in range(args.resume + 1, EPOCH+1):
         print(f"Epoch: {epoch}/{EPOCH}")
+        multiple = 1 if args.loss_fun == 'L1' else 255
         net.train()
         if args.gan:
             net_d.train()
-        train_loss_g, train_loss_d = train_one_epoch(epoch, args.gan)
+        train_loss_g, train_loss_d = train_one_epoch(epoch, args.gan, multiple)
         net.eval()
         if args.gan:
             net_d.eval()
-        val_loss_g, val_loss_d = val_one_epoch(epoch, args.gan)
+        val_loss_g, val_loss_d = val_one_epoch(epoch, args.gan, multiple)
         train_loss_g = train_loss_g / len(training_loader.dataset)
         train_loss_d = train_loss_d / len(training_loader.dataset)
         val_loss_g = val_loss_g / len(validation_loader.dataset)
@@ -111,7 +112,7 @@ def train(EPOCH, training_loader, validation_loader, log_file, args):
     log_file.close()
     return net
     
-def train_one_epoch(epoch_index, is_gan=False):
+def train_one_epoch(epoch_index, is_gan=False, multiple=1):
     running_loss_g = 0.
     running_loss_d = 0.
     last_loss = 0.
@@ -124,7 +125,7 @@ def train_one_epoch(epoch_index, is_gan=False):
                 p.requires_grad = False
         fake_H = net(data)
         # if epoch_index > d_init_iter:
-        loss_pix = loss_fn_g(fake_H*255, real_H*255)
+        loss_pix = loss_fn_g(fake_H*multiple, real_H*multiple)
         loss_g = pix_w * loss_pix
         real_fea = net_f(real_H.view(-1, 3, 256, 448)).detach()
         fake_fea = net_f(fake_H.view(-1, 3, 256, 448))        
@@ -158,7 +159,7 @@ def train_one_epoch(epoch_index, is_gan=False):
             running_loss_d += loss_d.item()
     return running_loss_g, running_loss_d
 
-def val_one_epoch(epoch_index, is_gan=False):
+def val_one_epoch(epoch_index, is_gan=False, multiple=1):
     running_loss_g = 0.
     running_loss_d = 0.
     for data, real_H in tqdm(validation_loader):
@@ -174,7 +175,7 @@ def val_one_epoch(epoch_index, is_gan=False):
             loss_d = (l_d_real + l_d_fake) / 2
             running_loss_d += loss_d.item()
             
-        loss = loss_fn_g(fake_H*255, real_H*255)
+        loss = loss_fn_g(fake_H*multiple, real_H*multiple)
         running_loss_g += loss.item()
     return running_loss_g, running_loss_d
 
