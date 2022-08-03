@@ -21,6 +21,7 @@ if __name__ == "__main__":
     parser.add_argument("-w", "--weight", type=str, default="model")
     parser.add_argument("-m", "--maps", type=int, default=96)
     parser.add_argument("-l", "--less", action="store_true")
+    parser.add_argument("-mv", "--mv", action="store_true")
     args = parser.parse_args()
     lpips_vgg = LPIPS(network='vgg').cuda()
     lpips_alex = LPIPS(network='alex').cuda()
@@ -40,7 +41,12 @@ if __name__ == "__main__":
     lr_dir = "../dataset/vimeo90k/lr"
     hr_dir = "../dataset/vimeo90k/hr"
     
-    model = SRX264(maps=args.maps)
+    if args.mv:
+        ch = 13
+    else:
+        ch = 9
+    
+    model = SRX264(maps=args.maps, ch=ch)
 
     model.to(device)
     model.load_state_dict(torch.load(f"./weights/{weight}.pth"))
@@ -66,13 +72,16 @@ if __name__ == "__main__":
         for target_frame in target_frames:
             lr1 = cv2.imread(f"{lr_path}/im{target_frame}.png")[...,::-1]
             f1_lr = (lr1.astype('float')/255).transpose(2, 0, 1)
-            f2_mv = (np.load(f"{lr_path}/mv{target_frame+1}.npy")).astype('float').transpose(2, 0, 1)
             lr2 = cv2.imread(f"{lr_path}/im{target_frame+1}.png")[...,::-1]
             f2_lr = (lr2.astype('float')/255).transpose(2, 0, 1)
-            f3_mv = (np.load(f"{lr_path}/mv{target_frame+2}.npy")).astype('float').transpose(2, 0, 1)
             lr3 = cv2.imread(f"{lr_path}/im{target_frame+2}.png")[...,::-1]
             f3_lr = (lr3.astype('float')/255).transpose(2, 0, 1)
-            lr = np.concatenate([f1_lr, f2_mv, f2_lr, f3_mv, f3_lr])
+            if args.mv:
+                f2_mv = (np.load(f"{lr_path}/mv{target_frame+1}.npy")).astype('float').transpose(2, 0, 1)
+                f3_mv = (np.load(f"{lr_path}/mv{target_frame+2}.npy")).astype('float').transpose(2, 0, 1)
+                lr = np.concatenate([f1_lr, f2_mv, f2_lr, f3_mv, f3_lr])
+            else:
+                lr = np.concatenate([f1_lr, f2_lr, f3_lr])
             lr = torch.from_numpy(lr).to(device, dtype=torch.float)
             lr = torch.unsqueeze(lr, 0)
             opt = model(lr)
