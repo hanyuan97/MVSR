@@ -80,7 +80,6 @@ def init(args, opt):
     pixel_loss_fn = nn.L1Loss().to(device) if opt['train']['pixel_criterion'] == 'l1' else nn.MSELoss().to(device)
     feature_loss_fn = nn.L1Loss().to(device) if opt['train']['feature_criterion'] == 'l1' else nn.MSELoss().to(device)
     
-    
     return net, net_f, pixel_loss_fn, feature_loss_fn, optimizer_g, training_loader, validation_loader, log_file
 
 def init_d(args, opt):
@@ -96,8 +95,6 @@ def init_d(args, opt):
             optimizer_d.load_state_dict(checkpoint['optimizer_state_dict'])
         else:
             net_d.load_state_dict(checkpoint)
-        
-
     cri_gan = GANLoss('ragan', 1.0, 0.0).to(device)
     return net_d, optimizer_d, cri_gan
     
@@ -111,12 +108,17 @@ def train(training_loader, validation_loader, log_file, args, opt):
         net.train()
         if gan:
             net_d.train()
-        train_loss_g, train_loss_d = train_one_epoch(epoch, gan, multiple)
+            train_loss_g, train_loss_pix, train_loss_fea, train_loss_gan, train_loss_d = train_one_epoch(epoch, gan, multiple)
+        else:
+            train_loss_g, train_loss_pix, train_loss_fea, train_loss_d = train_one_epoch(epoch, gan, multiple)
         net.eval()
         if gan:
             net_d.eval()
+            train_loss_gan = train_loss_gan / len(training_loader.dataset)
         val_loss_g, val_loss_d = val_one_epoch(epoch, gan, multiple)
         train_loss_g = train_loss_g / len(training_loader.dataset)
+        train_loss_pix = train_loss_pix / len(training_loader.dataset)
+        train_loss_fea = train_loss_fea / len(training_loader.dataset)
         train_loss_d = train_loss_d / len(training_loader.dataset)
         val_loss_g = val_loss_g / len(validation_loader.dataset)
         val_loss_d = val_loss_d / len(validation_loader.dataset)
@@ -125,6 +127,9 @@ def train(training_loader, validation_loader, log_file, args, opt):
                         'model_state_dict': net.state_dict(),
                         'optimizer_state_dict': optimizer_g.state_dict(),
                         'train_loss': train_loss_g,
+                        'pix_loss': train_loss_pix,
+                        'fea_loss': train_loss_fea,
+                        'gan_loss': train_loss_gan,
                         'val_loss': val_loss_g
                         }, f"./{model_path}/model_g_{epoch}.pth")
             torch.save({'epoch': epoch, 
@@ -133,25 +138,29 @@ def train(training_loader, validation_loader, log_file, args, opt):
                         'train_loss': train_loss_d,
                         'val_loss': val_loss_d
                         }, f"./{model_path}/model_d_{epoch}.pth")
-            
-            print(f"Training Loss: {train_loss_g:.6f}, {train_loss_d:.6f} \tValidation Loss: {val_loss_g:.6f}, {val_loss_d:.6f}")
-            log_file.write(f"{train_loss_g:.6f},{train_loss_d:.6f},{val_loss_g:.6f},{val_loss_d:.6f}\n")
+            print(f"Training loss: pix: {train_loss_pix:.4f}, fea: {train_loss_fea:.4f}, gan: {train_loss_gan:.4f}, total: {train_loss_g:.4f} \tValidation Loss: {val_loss_g:.4f}, {val_loss_d:.6f}")
+            log_file.write(f"{train_loss_g},{train_loss_pix},{train_loss_fea},{train_loss_gan},{train_loss_d},{val_loss_g},{val_loss_d}\n")
         else:
             torch.save({'epoch': epoch, 
                         'model_state_dict': net.state_dict(),
                         'optimizer_state_dict': optimizer_g.state_dict(),
                         'train_loss': train_loss_g,
+                        'pix_loss': train_loss_pix,
+                        'fea_loss': train_loss_fea,
                         'val_loss': val_loss_g
                         }, f"./{model_path}/model_{epoch}.pth")
-            print(f"Training Loss: {train_loss_g:.6f} \tValidation Loss: {val_loss_g:.6f}")
-            log_file.write(f"{train_loss_g:.6f},{val_loss_g:.6f}\n")
-        
+            print(f"Training loss: pix: {train_loss_pix:.4f}, fea: {train_loss_fea:.4f}, total: {train_loss_g:.4f} \tValidation Loss: {val_loss_g:.4f}")
+            log_file.write(f"{train_loss_g},{train_loss_pix},{train_loss_fea},{val_loss_g}\n")
+    
     log_file.close()
     return net
     
 def train_one_epoch(epoch_index, is_gan=False, multiple=1):
     running_loss_g = 0.
     running_loss_d = 0.
+    running_loss_pix = 0.
+    running_loss_fea = 0.
+    running_loss_gan = 0.
     last_loss = 0.
     for data, real_H in tqdm(training_loader):
         data, real_H = data.to(device, dtype=torch.float), real_H.to(device, dtype=torch.float)
@@ -173,11 +182,14 @@ def train_one_epoch(epoch_index, is_gan=False, multiple=1):
             pred_d_real = net_d(real_H.view(-1, 3, 256, 448)).detach()
             loss_gan = (cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
                         cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
+            running_loss_gan += loss_gan.item()
             loss_g += gan_w * loss_gan
         
         
         loss_g.backward()
         optimizer_g.step()
+        running_loss_pix += loss_pix.item()
+        running_loss_fea += loss_fea.item()
         running_loss_g += loss_g.item()
         if is_gan:
             for p in net_d.parameters():
@@ -187,15 +199,13 @@ def train_one_epoch(epoch_index, is_gan=False, multiple=1):
             l_d_real = cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
             l_d_fake = cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
             loss_d = (l_d_real + l_d_fake) / 2
-            # real_img = fake_H[0].cpu().detach().numpy().transpose(1, 2, 0) * 255
-            # cv2.imwrite("im1.png", real_img[:, :, :3])
-            # cv2.imwrite("im2.png", real_img[:, :, 3:6])
-            # cv2.imwrite("im3.png", real_img[:, :, 6:9])
             loss_d.backward()
             optimizer_d.step()
             running_loss_d += loss_d.item()
-    return running_loss_g, running_loss_d
-
+    if is_gan:
+        return running_loss_g, running_loss_pix, running_loss_fea, running_loss_gan, running_loss_d
+    else:
+        return running_loss_g, running_loss_pix, running_loss_fea, running_loss_d
 def val_one_epoch(epoch_index, is_gan=False, multiple=1):
     running_loss_g = 0.
     running_loss_d = 0.

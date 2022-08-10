@@ -4,7 +4,6 @@ import torch
 from torch.utils.data import Dataset
 import os
 
-
 class SRDataset(Dataset):
     def __init__(self, scale_factor = 2, datasets={}, has_mv=True) -> None:
         super().__init__()
