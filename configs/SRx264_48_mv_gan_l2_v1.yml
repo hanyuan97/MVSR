@@ -1,0 +1,42 @@
+name: SRx264_mv_gan_l1_v2
+discription: SRx264, mv, gan, fm 48
+scale_factor: 2
+mv: true
+gan: true
+
+datasets: 
+  train:
+    name: vimeo90k
+    path: ../dataset/vimeo90k
+    txt_path: ../dataset/vimeo90k/sep_trainlist.txt
+    lr_dir: ../dataset/vimeo90k/lr
+    hr_dir: ../dataset/vimeo90k/hr
+    train_ratio: !!float 8e-1
+    use_shuffle: false
+    batch_size: 16
+    val_batch_size: 12
+    color: RGB
+  
+network_G:
+  net: SRX264
+  version: v1
+  feature_maps: 48
+  in_nc: 13
+  out_nc: 9
+
+network_D:
+  net: NLayerDiscriminator
+  in_nc: 3
+  nf: 64
+  nLayer: 3
+
+train:
+  epoch: 20
+  multiple: 255
+  lr_G: !!float 1e-4
+  lr_D: !!float 1e-4
+  pixel_weight: !!float 1e-2
+  pixel_criterion: l2
+  feature_weight: 1
+  feature_criterion: l2
+  gan_weight: !!float 5e-3

@@ -1,8 +1,8 @@
-name: SRX264_mv_gan_l1
+name: SRx264_mv_gan_l1_v2
 discription: SRx264, mv, gan, fm 48
 scale_factor: 2
 mv: true
-gan: true
+gan: false
 
 datasets: 
   train:
@@ -19,7 +19,7 @@ datasets:
   
 network_G:
   net: SRX264
-  version: v1
+  version: v2
   feature_maps: 48
   in_nc: 13
   out_nc: 9
@@ -31,7 +31,7 @@ network_D:
   nLayer: 3
 
 train:
-  epoch: 20
+  epoch: 10
   multiple: 255
   lr_G: !!float 1e-4
   lr_D: !!float 1e-4
