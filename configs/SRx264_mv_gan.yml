@@ -19,6 +19,7 @@ datasets:
   
 network_G:
   net: SRX264
+  version: v1
   feature_maps: 48
   in_nc: 13
   out_nc: 9

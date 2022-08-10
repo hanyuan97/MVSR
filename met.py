@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from models.SRX264 import SRX264
+from models.SRX264 import SRX264v1
 import matplotlib.pyplot as plt
 import cv2
 from utils.jpeg import JPEG

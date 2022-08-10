@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from models.SRX264 import SRX264
+from models.SRX264 import SRX264v1
 import matplotlib.pyplot as plt
 import cv2
 from utils.jpeg import JPEG
@@ -15,7 +15,6 @@ def to_CHW_cuda(img):
     return torch.from_numpy(im.transpose(2, 0, 1)).cuda().unsqueeze(0)/255
 
 if __name__ == "__main__":
-    
     parser = argparse.ArgumentParser()
     parser.add_argument("-b", "--batch", type=int, default=8)
     parser.add_argument("-w", "--weight", type=str, default="model")
@@ -46,7 +45,7 @@ if __name__ == "__main__":
     else:
         ch = 9
     
-    model = SRX264(maps=args.maps, in_nc=ch)
+    model = SRX264v1(maps=args.maps, in_nc=ch)
 
     model.to(device)
     model.load_state_dict(torch.load(f"./weights/{weight}.pth"))

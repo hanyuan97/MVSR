@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from models.SRX264 import SRX264
+from models.SRX264 import SRX264v1
 import matplotlib.pyplot as plt
 import cv2
 from utils.jpeg import JPEG
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     lr_dir = "../dataset/vimeo90k/lr"
     hr_dir = "../dataset/vimeo90k/hr"
     log_file = open(f"result/{args.batch}_{args.maps}.csv", "w")
-    model = SRX264(maps=args.maps)
+    model = SRX264v1(maps=args.maps)
 
     model.to(device)
     model.load_state_dict(torch.load(f"./weights/{weight}.pth"))

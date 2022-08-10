@@ -42,8 +42,12 @@ def init(args, opt):
                             pin_memory=True)
 
     if opt['network_G']['net'] == 'SRX264':
-        from models.SRX264 import SRX264
-        net = SRX264(scale_factor=opt['scale_factor'], maps=opt['network_G']['feature_maps'], in_nc=opt['network_G']['in_nc'])
+        if opt['network_G']['version'] == 'v1':
+            from models.SRX264 import SRX264v1
+            net = SRX264v1(scale_factor=opt['scale_factor'], maps=opt['network_G']['feature_maps'], in_nc=opt['network_G']['in_nc'])
+        else:
+            from models.SRX264 import SRX264v2
+            net = SRX264v2(scale_factor=opt['scale_factor'], maps=opt['network_G']['feature_maps'], in_nc=opt['network_G']['in_nc'])
     elif opt['network_G']['net'] == 'RRDBNet':
         from models.RRDBNet_arch import RRDBNet
         net = RRDBNet(in_nc=opt['network_G']['in_nc'], out_nc=opt['network_G']['out_nc'], nf=opt['network_G']['nf'], nb=opt['network_G']['nb'])
@@ -215,17 +219,6 @@ def val_one_epoch(epoch_index, is_gan=False, multiple=1):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", type=str)
-    # parser.add_argument("-e", "--epoch", type=int, default=20)
-    # parser.add_argument("-b", "--batch", type=int, default=64)
-    # parser.add_argument("-vb", "--val_batch", type=int, default=32)
-    # parser.add_argument("-tr", "--train_ratio", type=float, default=0.8)
-    # parser.add_argument("-o", "--output_filename", type=str, default="model.pth")
-    # parser.add_argument("-lf", "--loss_fun", type=str, default="L1")
-    # parser.add_argument("-m", "--maps", type=int, default=96)
-    # parser.add_argument("-s", "--save", action="store_true")
-    # parser.add_argument("-g", "--gan", action="store_true")
-    # parser.add_argument("-mv", "--mv", action="store_true")
-    # parser.add_argument("--weight", type=str, default="model")
     parser.add_argument("-r", "--resume", type=int, default=0)
     parser.add_argument("-w", "--workers", type=int, default=1)
     args = parser.parse_args()
@@ -241,13 +234,4 @@ if __name__ == "__main__":
         net_d, optimizer_d, cri_gan = init_d(args, opt)
     
     train(training_loader, validation_loader, log_file, args, opt)
-    
-    #if args.save:
-    #    torch.save(model.state_dict(), f"./weights/{args.output_filename}")
-    #    print(f"model save to: ./weights/{args.output_filename}")
-    # for data, label in tqdm(validation_loader):
-    #     data, label = data.to(device), label.to(device)
-    #     output = model(data)
-    #     print(output[1])
-    #     break
     

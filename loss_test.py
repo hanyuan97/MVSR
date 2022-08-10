@@ -8,7 +8,7 @@ import numpy as np
 from torch.utils.data import DataLoader, random_split, Subset
 from models.loss import GANLoss, VGGFeatureExtractor
 from dataset import SRDataset
-from models.SRX264 import SRX264, NLayerDiscriminator
+from models.SRX264 import SRX264v1, NLayerDiscriminator
 from tqdm import tqdm
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -31,7 +31,7 @@ def init(args):
         ch = 13
     else:
         ch = 9
-    net = SRX264(maps=args.maps, in_nc=ch)
+    net = SRX264v1(maps=args.maps, in_nc=ch)
     
     net_f = VGGFeatureExtractor(feature_layer=34, use_bn=False,
                                 use_input_norm=True, device=device)

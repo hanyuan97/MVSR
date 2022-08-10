@@ -4,9 +4,9 @@ import torch.nn.functional as F
 from utils.gdn import GDN
 import math
 
-class SRX264(nn.Module):
+class SRX264v1(nn.Module):
     def __init__(self, scale_factor = 2, maps = 96, in_nc=13, out_nc=9) -> None:
-        super(SRX264, self).__init__()
+        super(SRX264v1, self).__init__()
         upsample_block_num = int(math.log(scale_factor, 2))
         self.block1 = nn.Sequential(
             nn.ConvTranspose2d(in_nc, maps, kernel_size=9, padding=4),
@@ -34,7 +34,39 @@ class SRX264(nn.Module):
         block6 = self.block6(block5)
         block7 = self.block7(block6+block2)
         block8 = self.block8(block7)
-        return (torch.tanh(block8) + 1) / 2 
+        return (torch.tanh(block8) + 1) / 2
+    
+class SRX264v2(nn.Module):
+    def __init__(self, scale_factor = 2, maps = 96, in_nc=13, out_nc=9) -> None:
+        super(SRX264v2, self).__init__()
+        upsample_block_num = int(math.log(scale_factor, 2))
+        self.block1 = nn.Sequential(
+            nn.Conv2d(in_nc, maps, kernel_size=3, padding=1),
+            nn.PReLU()
+        )
+        self.block2 = ResidualBlock(maps)
+        self.block3 = ResidualBlock(maps)
+        self.block4 = ResidualBlock(maps)
+        self.block5 = ResidualBlock(maps)
+        self.block6 = ResidualBlock(maps)
+        self.block7 = nn.Sequential(
+            nn.Conv2d(maps, maps, kernel_size=3, padding=1),
+            GDN(maps)
+        )
+        block8 = [UpsampleBLock(maps, 2) for _ in range(upsample_block_num)]
+        block8.append(nn.Conv2d(maps, out_nc, kernel_size=3, padding=1))
+        self.block8 = nn.Sequential(*block8)
+        
+    def forward(self, x):
+        block1 = self.block1(x)
+        block2 = self.block2(block1)
+        block3 = self.block3(block2)
+        block4 = self.block4(block3)
+        block5 = self.block5(block4)
+        block6 = self.block6(block5)
+        block7 = self.block7(block6+block2)
+        block8 = self.block8(block7)
+        return block8
 
 class ResidualBlock(nn.Module):
     def __init__(self, channels):
