@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from model import SRX264
+from models.SRX264 import SRX264
 import matplotlib.pyplot as plt
 import cv2
 from utils.jpeg import JPEG
@@ -46,7 +46,7 @@ if __name__ == "__main__":
     else:
         ch = 9
     
-    model = SRX264(maps=args.maps, ch=ch)
+    model = SRX264(maps=args.maps, in_nc=ch)
 
     model.to(device)
     model.load_state_dict(torch.load(f"./weights/{weight}.pth"))

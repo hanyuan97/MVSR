@@ -6,16 +6,16 @@ import torch.optim as optim
 import torch.nn as nn
 import numpy as np
 from torch.utils.data import DataLoader, random_split, Subset
-from loss import GANLoss, VGGFeatureExtractor
+from models.loss import GANLoss, VGGFeatureExtractor
 from dataset import SRDataset
-from model import SRX264, NLayerDiscriminator
+from models.SRX264 import SRX264, NLayerDiscriminator
 from tqdm import tqdm
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 def init(args):
     EPOCH, train_batch, val_batch, train_ratio, workers = args.epoch, args.batch, args.val_batch, args.train_ratio, args.workers
-    train_dataset = SRDataset(is_mv=args.mv)
+    train_dataset = SRDataset(has_mv=args.mv)
     # valid_dataset = SRDataset(filename="sep_testlist.txt")
     train_num = int(len(train_dataset) * args.train_ratio)
     val_num = len(train_dataset) - train_num
@@ -31,7 +31,7 @@ def init(args):
         ch = 13
     else:
         ch = 9
-    net = SRX264(maps=args.maps, ch=ch)
+    net = SRX264(maps=args.maps, in_nc=ch)
     
     net_f = VGGFeatureExtractor(feature_layer=34, use_bn=False,
                                 use_input_norm=True, device=device)
@@ -58,12 +58,8 @@ def init(args):
 def init_d(args):
     net_d = NLayerDiscriminator(3)
     net_d.to(device)
-    if args.resume != 0:
-        model_path = f"./weights"
-        if args.gan:
-            model_path += "/gan"
-        model_path += f"/{args.maps}"
-        net_d.load_state_dict(torch.load(f"{model_path}/{args.weight}_d_{args.resume}.pth"))
+    model_path = args.path
+    net_d.load_state_dict(torch.load(f"{model_path}/{args.weight}_d_{args.resume}.pth"))
     optimizer_d = optim.Adam(net_d.parameters(), lr=1e-4, betas=(0.9, 0.999))
     cri_gan = GANLoss('ragan', 1.0, 0.0).to(device)
     return net_d, optimizer_d, cri_gan
@@ -185,7 +181,7 @@ if __name__ == "__main__":
     pix_w = 1e-2
     gan_w = 5e-3
     log_file = open(f"./loss_log/{args.output_filename}", "w")
-    for i in range(1, 15):
+    for i in range(10, 11):
         args.resume = i
         args.epoch = i+1
         net, net_f, cri_gan, loss_fn_g, optimizer_g, training_loader = init(args)

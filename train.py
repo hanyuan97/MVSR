@@ -1,4 +1,5 @@
 import argparse
+from calendar import EPOCH
 import os
 import cv2
 import torch
@@ -6,106 +7,138 @@ import torch.optim as optim
 import torch.nn as nn
 import numpy as np
 from torch.utils.data import DataLoader, random_split, Subset
-from loss import GANLoss, VGGFeatureExtractor
+from models.loss import GANLoss, VGGFeatureExtractor
 from dataset import SRDataset
-from model import SRX264, NLayerDiscriminator
 from tqdm import tqdm
+import yaml
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-def init(args):
-    EPOCH, train_batch, val_batch, train_ratio, workers = args.epoch, args.batch, args.val_batch, args.train_ratio, args.workers
-    train_dataset = SRDataset(is_mv=args.mv)
+def init(args, opt):
+    train_batch = opt['datasets']['train']['batch_size']
+    val_batch = opt['datasets']['train']['val_batch_size']
+    train_ratio = opt['datasets']['train']['train_ratio']
+    use_shuffle = opt['datasets']['train']['use_shuffle']
+    scale_factor = opt['scale_factor']
+    has_mv = opt['mv']
+    workers = args.workers
+    
+    train_dataset = SRDataset(scale_factor=scale_factor, datasets=opt['datasets'], has_mv=has_mv)
     # valid_dataset = SRDataset(filename="sep_testlist.txt")
-    train_num = int(len(train_dataset) * args.train_ratio)
+    train_num = int(len(train_dataset) * train_ratio)
     val_num = len(train_dataset) - train_num
     
     # train_set, val_set = random_split(train_dataset, [train_num, val_num])
     training_loader = DataLoader(dataset=Subset(train_dataset, range(train_num)),
                             batch_size=train_batch,
-                            shuffle=True,
+                            shuffle=use_shuffle,
                             num_workers=workers,
                             pin_memory=True)
 
     validation_loader = DataLoader(dataset=Subset(train_dataset, range(train_num, len(train_dataset))),
                             batch_size=val_batch,
-                            shuffle=True,
+                            shuffle=use_shuffle,
                             num_workers=workers,
                             pin_memory=True)
 
-    if args.mv:
-        ch = 13
-    else:
-        ch = 9
-    
-    net = SRX264(maps=args.maps, ch=ch)
+    if opt['network_G']['net'] == 'SRX264':
+        from models.SRX264 import SRX264
+        net = SRX264(scale_factor=opt['scale_factor'], maps=opt['network_G']['feature_maps'], in_nc=opt['network_G']['in_nc'])
+    elif opt['network_G']['net'] == 'RRDBNet':
+        from models.RRDBNet_arch import RRDBNet
+        net = RRDBNet(in_nc=opt['network_G']['in_nc'], out_nc=opt['network_G']['out_nc'], nf=opt['network_G']['nf'], nb=opt['network_G']['nb'])
     
     net_f = VGGFeatureExtractor(feature_layer=34, use_bn=False,
                                 use_input_norm=True, device=device)
     net_f.eval()
-    if not os.path.exists("./loss_log"):
-        os.mkdir("./loss_log")
+    if not os.path.exists(f"./experiments/{opt['name']}"):
+        os.mkdir(f"./experiments/{opt['name']}")
+        os.mkdir(f"./experiments/{opt['name']}/weights")
+        os.mkdir(f"./experiments/{opt['name']}/show")
+        os.mkdir(f"./experiments/{opt['name']}/test")
     
-    if not os.path.exists("./weights"):
-        os.mkdir("./weights")
-    
-    
-    log_file = open(f"./loss_log/x264SR_{args.maps}.log", "w")
-    
-    net.to(device)    
+    log_file = open(f"./experiments/{opt['name']}/loss.log", "w")
+    model_path = f"./experiments/{opt['name']}/weights"
+    net.to(device)
     net_f.to(device)
+    optimizer_g = optim.Adam(net.parameters(), lr=opt['train']['lr_G'], betas=(0.9, 0.999))
     if args.resume != 0:
-        model_path = f"./weights"
-        if args.gan:
-            model_path += "/gan"
-        model_path += f"/{args.maps}"
-        if args.gan:
-            net.load_state_dict(torch.load(f"{model_path}/{args.weight}_g_{args.resume}.pth"))
+        if opt['gan']:
+            checkpoint = torch.load(torch.load(f"{model_path}/model_g_{args.resume}.pth"))
         else:
-            net.load_state_dict(torch.load(f"{model_path}/{args.weight}_{args.resume}.pth"))
+            checkpoint = torch.load(torch.load(f"{model_path}/model_{args.resume}.pth"))
+        if checkpoint['model_state_dict']:
+            net.load_state_dict(checkpoint['model_state_dict'])
+            optimizer_g.load_state_dict(checkpoint['optimizer_state_dict'])
+        else:
+            net.load_state_dict(checkpoint)
             
-    loss_fn_g = nn.L1Loss().to(device) if args.loss_fun == 'L1' else nn.MSELoss().to(device)
+    pixel_loss_fn = nn.L1Loss().to(device) if opt['train']['pixel_criterion'] == 'l1' else nn.MSELoss().to(device)
+    feature_loss_fn = nn.L1Loss().to(device) if opt['train']['feature_criterion'] == 'l1' else nn.MSELoss().to(device)
     
-    optimizer_g = optim.Adam(net.parameters(), lr=1e-4, betas=(0.9, 0.999))
     
-    return net, net_f, loss_fn_g, optimizer_g, training_loader, validation_loader, log_file
+    return net, net_f, pixel_loss_fn, feature_loss_fn, optimizer_g, training_loader, validation_loader, log_file
 
-def init_d(args):
+def init_d(args, opt):
+    from models.Discriminator import NLayerDiscriminator
     net_d = NLayerDiscriminator(3)
     net_d.to(device)
+    optimizer_d = optim.Adam(net_d.parameters(), lr=opt['train']['lr_D'], betas=(0.9, 0.999))
     if args.resume != 0:
-        model_path = f"./weights"
-        if args.gan:
-            model_path += "/gan"
-        model_path += f"/{args.maps}"
-        net_d.load_state_dict(torch.load(f"{model_path}/{args.weight}_d_{args.resume}.pth"))
-    optimizer_d = optim.Adam(net_d.parameters(), lr=1e-4, betas=(0.9, 0.999))
+        model_path = f"./experiments/{opt['name']}/weights"
+        checkpoint = torch.load(torch.load(f"{model_path}/model_d_{args.resume}.pth"))
+        if checkpoint['model_state_dict']:
+            net_d.load_state_dict(checkpoint['model_state_dict'])
+            optimizer_d.load_state_dict(checkpoint['optimizer_state_dict'])
+        else:
+            net_d.load_state_dict(checkpoint)
+        
+
     cri_gan = GANLoss('ragan', 1.0, 0.0).to(device)
     return net_d, optimizer_d, cri_gan
     
-def train(EPOCH, training_loader, validation_loader, log_file, args):
+def train(training_loader, validation_loader, log_file, args, opt):
+    EPOCH = opt['train']['epoch']
+    multiple = opt['train']['multiple']
+    model_path = f"./experiments/{opt['name']}/weights"
+    gan = opt['gan']
     for epoch in range(args.resume + 1, EPOCH+1):
         print(f"Epoch: {epoch}/{EPOCH}")
-        multiple = 1 if args.loss_fun == 'L1' else 255
         net.train()
-        if args.gan:
+        if gan:
             net_d.train()
-        train_loss_g, train_loss_d = train_one_epoch(epoch, args.gan, multiple)
+        train_loss_g, train_loss_d = train_one_epoch(epoch, gan, multiple)
         net.eval()
-        if args.gan:
+        if gan:
             net_d.eval()
-        val_loss_g, val_loss_d = val_one_epoch(epoch, args.gan, multiple)
+        val_loss_g, val_loss_d = val_one_epoch(epoch, gan, multiple)
         train_loss_g = train_loss_g / len(training_loader.dataset)
         train_loss_d = train_loss_d / len(training_loader.dataset)
         val_loss_g = val_loss_g / len(validation_loader.dataset)
         val_loss_d = val_loss_d / len(validation_loader.dataset)
-        if args.gan:
-            torch.save(net.state_dict(), f"./weights/model_g_{epoch}.pth")
-            torch.save(net_d.state_dict(), f"./weights/model_d_{epoch}.pth")
+        if gan:
+            torch.save({'epoch': epoch, 
+                        'model_state_dict': net.state_dict(),
+                        'optimizer_state_dict': optimizer_g.state_dict(),
+                        'train_loss': train_loss_g,
+                        'val_loss': val_loss_g
+                        }, f"./{model_path}/model_g_{epoch}.pth")
+            torch.save({'epoch': epoch, 
+                        'model_state_dict': net_d.state_dict(),
+                        'optimizer_state_dict': optimizer_d.state_dict(),
+                        'train_loss': train_loss_d,
+                        'val_loss': val_loss_d
+                        }, f"./{model_path}/model_d_{epoch}.pth")
+            
             print(f"Training Loss: {train_loss_g:.6f}, {train_loss_d:.6f} \tValidation Loss: {val_loss_g:.6f}, {val_loss_d:.6f}")
             log_file.write(f"{train_loss_g:.6f},{train_loss_d:.6f},{val_loss_g:.6f},{val_loss_d:.6f}\n")
         else:
-            torch.save(net.state_dict(), f"./weights/model_{epoch}.pth")
+            torch.save({'epoch': epoch, 
+                        'model_state_dict': net.state_dict(),
+                        'optimizer_state_dict': optimizer_g.state_dict(),
+                        'train_loss': train_loss_g,
+                        'val_loss': val_loss_g
+                        }, f"./{model_path}/model_{epoch}.pth")
             print(f"Training Loss: {train_loss_g:.6f} \tValidation Loss: {val_loss_g:.6f}")
             log_file.write(f"{train_loss_g:.6f},{val_loss_g:.6f}\n")
         
@@ -125,11 +158,11 @@ def train_one_epoch(epoch_index, is_gan=False, multiple=1):
                 p.requires_grad = False
         fake_H = net(data)
         # if epoch_index > d_init_iter:
-        loss_pix = loss_fn_g(fake_H*multiple, real_H*multiple)
+        loss_pix = pixel_loss_fn(fake_H*multiple, real_H*multiple)
         loss_g = pix_w * loss_pix
         real_fea = net_f(real_H.view(-1, 3, 256, 448)).detach()
         fake_fea = net_f(fake_H.view(-1, 3, 256, 448))        
-        loss_fea = loss_fn_g(fake_fea, real_fea)
+        loss_fea = feature_loss_fn(fake_fea, real_fea)
         loss_g += loss_fea
         if is_gan:
             pred_g_fake = net_d(fake_H.view(-1, 3, 256, 448))
@@ -175,35 +208,39 @@ def val_one_epoch(epoch_index, is_gan=False, multiple=1):
             loss_d = (l_d_real + l_d_fake) / 2
             running_loss_d += loss_d.item()
             
-        loss = loss_fn_g(fake_H*multiple, real_H*multiple)
+        loss = pixel_loss_fn(fake_H*multiple, real_H*multiple)
         running_loss_g += loss.item()
     return running_loss_g, running_loss_d
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-e", "--epoch", type=int, default=20)
-    parser.add_argument("-b", "--batch", type=int, default=64)
-    parser.add_argument("-vb", "--val_batch", type=int, default=32)
-    parser.add_argument("-tr", "--train_ratio", type=float, default=0.8)
-    parser.add_argument("-o", "--output_filename", type=str, default="model.pth")
-    parser.add_argument("-lf", "--loss_fun", type=str, default="L1")
-    parser.add_argument("-m", "--maps", type=int, default=96)
-    parser.add_argument("-s", "--save", action="store_true")
-    parser.add_argument("-g", "--gan", action="store_true")
-    parser.add_argument("-mv", "--mv", action="store_true")
-    parser.add_argument("--weight", type=str, default="model")
+    parser.add_argument("-c", "--config", type=str)
+    # parser.add_argument("-e", "--epoch", type=int, default=20)
+    # parser.add_argument("-b", "--batch", type=int, default=64)
+    # parser.add_argument("-vb", "--val_batch", type=int, default=32)
+    # parser.add_argument("-tr", "--train_ratio", type=float, default=0.8)
+    # parser.add_argument("-o", "--output_filename", type=str, default="model.pth")
+    # parser.add_argument("-lf", "--loss_fun", type=str, default="L1")
+    # parser.add_argument("-m", "--maps", type=int, default=96)
+    # parser.add_argument("-s", "--save", action="store_true")
+    # parser.add_argument("-g", "--gan", action="store_true")
+    # parser.add_argument("-mv", "--mv", action="store_true")
+    # parser.add_argument("--weight", type=str, default="model")
     parser.add_argument("-r", "--resume", type=int, default=0)
     parser.add_argument("-w", "--workers", type=int, default=1)
-    
     args = parser.parse_args()
+    with open(f"configs/{args.config}", "r") as f:
+        opt = yaml.safe_load(f)
     d_init_iter = 0
-    pix_w = 1e-2
-    gan_w = 5e-3
-    net, net_f, loss_fn_g, optimizer_g, training_loader, validation_loader, log_file = init(args)
-    if args.gan:
-        net_d, optimizer_d, cri_gan = init_d(args)
+    model_path = f"./experiments/{opt['name']}/weights"
+    pix_w = opt['train']['pixel_weight']
+    gan_w = opt['train']['gan_weight']
     
-    train(args.epoch, training_loader, validation_loader, log_file, args)
+    net, net_f, pixel_loss_fn, feature_loss_fn, optimizer_g, training_loader, validation_loader, log_file = init(args, opt)
+    if opt['gan']:
+        net_d, optimizer_d, cri_gan = init_d(args, opt)
+    
+    train(training_loader, validation_loader, log_file, args, opt)
     
     #if args.save:
     #    torch.save(model.state_dict(), f"./weights/{args.output_filename}")
