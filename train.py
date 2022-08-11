@@ -67,15 +67,16 @@ def init(args, opt):
     net_f.to(device)
     optimizer_g = optim.Adam(net.parameters(), lr=opt['train']['lr_G'], betas=(0.9, 0.999))
     if args.resume != 0:
-        if opt['gan']:
-            checkpoint = torch.load(torch.load(f"{model_path}/model_g_{args.resume}.pth"))
+        if args.old:
+            net.load_state_dict(f"{model_path}/model_g_{args.resume}.pth")
         else:
-            checkpoint = torch.load(torch.load(f"{model_path}/model_{args.resume}.pth"))
-        if checkpoint['model_state_dict']:
+            if opt['gan']:
+                checkpoint = torch.load(torch.load(f"{model_path}/model_g_{args.resume}.pth"))
+            else:
+                checkpoint = torch.load(torch.load(f"{model_path}/model_{args.resume}.pth"))
             net.load_state_dict(checkpoint['model_state_dict'])
             optimizer_g.load_state_dict(checkpoint['optimizer_state_dict'])
-        else:
-            net.load_state_dict(checkpoint)
+            
             
     pixel_loss_fn = nn.L1Loss().to(device) if opt['train']['pixel_criterion'] == 'l1' else nn.MSELoss().to(device)
     feature_loss_fn = nn.L1Loss().to(device) if opt['train']['feature_criterion'] == 'l1' else nn.MSELoss().to(device)
@@ -89,12 +90,13 @@ def init_d(args, opt):
     optimizer_d = optim.Adam(net_d.parameters(), lr=opt['train']['lr_D'], betas=(0.9, 0.999))
     if args.resume != 0:
         model_path = f"./experiments/{opt['name']}/weights"
-        checkpoint = torch.load(torch.load(f"{model_path}/model_d_{args.resume}.pth"))
-        if checkpoint['model_state_dict']:
+        if args.old:
+            net_d.load_state_dict(f"{model_path}/model_d_{args.resume}.pth")
+        else:
+            checkpoint = torch.load(torch.load(f"{model_path}/model_d_{args.resume}.pth"))
             net_d.load_state_dict(checkpoint['model_state_dict'])
             optimizer_d.load_state_dict(checkpoint['optimizer_state_dict'])
-        else:
-            net_d.load_state_dict(checkpoint)
+        
     cri_gan = GANLoss('ragan', 1.0, 0.0).to(device)
     return net_d, optimizer_d, cri_gan
     
@@ -231,6 +233,7 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--config", type=str)
     parser.add_argument("-r", "--resume", type=int, default=0)
     parser.add_argument("-w", "--workers", type=int, default=1)
+    parser.add_argument("-old", "--old", action="store_true")
     args = parser.parse_args()
     with open(f"configs/{args.config}", "r") as f:
         opt = yaml.safe_load(f)
