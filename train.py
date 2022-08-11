@@ -67,13 +67,15 @@ def init(args, opt):
     net_f.to(device)
     optimizer_g = optim.Adam(net.parameters(), lr=opt['train']['lr_G'], betas=(0.9, 0.999))
     if args.resume != 0:
-        if args.old:
-            net.load_state_dict(f"{model_path}/model_g_{args.resume}.pth")
+        if opt['gan']:
+            weight_path = f"{model_path}/model_g_{args.resume}.pth"
         else:
-            if opt['gan']:
-                checkpoint = torch.load(torch.load(f"{model_path}/model_g_{args.resume}.pth"))
-            else:
-                checkpoint = torch.load(torch.load(f"{model_path}/model_{args.resume}.pth"))
+            weight_path = f"{model_path}/model_{args.resume}.pth"
+        if args.old:
+            print(weight_path)
+            net.load_state_dict(torch.load(weight_path))
+        else:
+            checkpoint = torch.load(torch.load(weight_path))
             net.load_state_dict(checkpoint['model_state_dict'])
             optimizer_g.load_state_dict(checkpoint['optimizer_state_dict'])
             
@@ -89,9 +91,8 @@ def init_d(args, opt):
     net_d.to(device)
     optimizer_d = optim.Adam(net_d.parameters(), lr=opt['train']['lr_D'], betas=(0.9, 0.999))
     if args.resume != 0:
-        model_path = f"./experiments/{opt['name']}/weights"
         if args.old:
-            net_d.load_state_dict(f"{model_path}/model_d_{args.resume}.pth")
+            net_d.load_state_dict(torch.load(f"{model_path}/model_d_{args.resume}.pth"))
         else:
             checkpoint = torch.load(torch.load(f"{model_path}/model_d_{args.resume}.pth"))
             net_d.load_state_dict(checkpoint['model_state_dict'])
