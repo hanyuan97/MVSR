@@ -21,7 +21,7 @@ network_G:
   net: SRX264
   version: v2
   feature_maps: 48
-  in_nc: 13
+  in_nc: 9
   out_nc: 9
 
 network_D:

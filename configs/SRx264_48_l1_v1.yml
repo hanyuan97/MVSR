@@ -31,7 +31,7 @@ network_D:
   nLayer: 3
 
 train:
-  epoch: 25
+  epoch: 20
   multiple: 255
   lr_G: !!float 1e-4
   lr_D: !!float 1e-4
