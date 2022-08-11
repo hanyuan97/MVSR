@@ -1,4 +1,4 @@
-name: SRx264_mv_gan_l1_v2
+name: SRx264_l1_v2
 discription: SRx264, mv, gan, fm 48
 scale_factor: 2
 mv: false
