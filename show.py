@@ -2,16 +2,12 @@ import torch
 import numpy as np
 from models.SRX264 import SRX264v1
 import cv2
-from utils.metrics import psnr, cal_ssim, cal_ms_ssim
+from utils.metrics import psnr, cal_ssim, cal_ms_ssim, to_CHW_cuda
 import os
 import argparse
 import yaml
 from tqdm import tqdm
 from piqa import PSNR, SSIM, MS_SSIM, LPIPS, HaarPSI
-
-def to_CHW_cuda(img):
-    im = img.copy()
-    return torch.from_numpy(im.transpose(2, 0, 1)).cuda().unsqueeze(0)/255
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -80,10 +76,10 @@ if __name__ == "__main__":
         log_file.write(f"{i}")
         for target_frame in target_frames:
             lr1 = cv2.imread(f"{lr_path}/im{target_frame}.png")[...,::-1]
-            f1_lr = (lr1.astype('float')/255).transpose(2, 0, 1)
             lr2 = cv2.imread(f"{lr_path}/im{target_frame+1}.png")[...,::-1]
-            f2_lr = (lr2.astype('float')/255).transpose(2, 0, 1)
             lr3 = cv2.imread(f"{lr_path}/im{target_frame+2}.png")[...,::-1]
+            f1_lr = (lr1.astype('float')/255).transpose(2, 0, 1)
+            f2_lr = (lr2.astype('float')/255).transpose(2, 0, 1)
             f3_lr = (lr3.astype('float')/255).transpose(2, 0, 1)
             if opt['mv']:
                 f2_mv = (np.load(f"{lr_path}/mv{target_frame+1}.npy")).astype('float').transpose(2, 0, 1)
@@ -102,12 +98,12 @@ if __name__ == "__main__":
             # BGR
             if target_frame != 5:
                 hr1 = cv2.imread(f"{hr_path}/im{target_frame}.png")[...,::-1]
-                hr1_cuda = to_CHW_cuda(hr1)
                 hr2 = cv2.imread(f"{hr_path}/im{target_frame+1}.png")[...,::-1]
+                hr1_cuda = to_CHW_cuda(hr1)
                 hr2_cuda = to_CHW_cuda(hr2)
                 sr1 = np.round(output[:, :, :3]).astype('uint8')
-                sr1_cuda = to_CHW_cuda(sr1)
                 sr2 = np.round(output[:, :, 3:6]).astype('uint8')
+                sr1_cuda = to_CHW_cuda(sr1)
                 sr2_cuda = to_CHW_cuda(sr2)
                 sr_psnr1 = np.mean(psnr(sr1, hr1))
                 sr_psnr2 = np.mean(psnr(sr2, hr2))

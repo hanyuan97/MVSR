@@ -333,6 +333,10 @@ def hwc_to_tensor_chw(x):
     elif len(x.shape) == 2:
         x = torch.unsqueeze(torch.from_numpy(x.copy()).float().cuda(), 0)
         return torch.unsqueeze(x, 0)
+    
+def to_CHW_cuda(img):
+    im = img.copy()
+    return torch.from_numpy(im.transpose(2, 0, 1)).cuda().unsqueeze(0)/255
 
 def convert_cal_ssim(x, y):
     x = hwc_to_tensor_chw(x)
