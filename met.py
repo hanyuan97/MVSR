@@ -4,7 +4,7 @@ from models.SRX264 import SRX264v1
 import matplotlib.pyplot as plt
 import cv2
 from utils.jpeg import JPEG
-from utils.metrics import cal_ssim, cal_ms_ssim, psnr
+from utils.metrics import convert_cal_ssim, convert_cal_ms_ssim, psnr
 import os
 import argparse
 

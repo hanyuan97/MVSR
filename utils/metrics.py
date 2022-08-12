@@ -334,14 +334,23 @@ def hwc_to_tensor_chw(x):
         x = torch.unsqueeze(torch.from_numpy(x.copy()).float().cuda(), 0)
         return torch.unsqueeze(x, 0)
 
-def cal_ssim(x, y):
+def convert_cal_ssim(x, y):
     x = hwc_to_tensor_chw(x)
     y = hwc_to_tensor_chw(y)
     ssim_module = SSIM(data_range=255.0, size_average=True, channel=x.shape[1])
     return ssim_module(x ,y).cpu().numpy()
 
-def cal_ms_ssim(x, y):
+def convert_cal_ms_ssim(x, y):
     x = hwc_to_tensor_chw(x)
     y = hwc_to_tensor_chw(y)
     ms_ssim_module = MS_SSIM(data_range=255.0, size_average=True, channel=x.shape[1])
+    return ms_ssim_module(x ,y).cpu().numpy()
+
+ssim_module = SSIM(data_range=1.0, size_average=True, channel=3)
+ms_ssim_module = MS_SSIM(data_range=1.0, size_average=True, channel=3)
+
+def cal_ssim(x, y):
+    return ssim_module(x ,y).cpu().numpy()
+
+def cal_ms_ssim(x, y):
     return ms_ssim_module(x ,y).cpu().numpy()

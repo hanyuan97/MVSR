@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from models.SRX264 import SRX264v1
 import cv2
-from utils.metrics import cal_ssim, cal_ms_ssim, psnr
+from utils.metrics import psnr, cal_ssim, cal_ms_ssim
 import os
 import argparse
 import yaml
@@ -25,6 +25,7 @@ if __name__ == "__main__":
     
     lpips_vgg = LPIPS(network='vgg').cuda()
     lpips_alex = LPIPS(network='alex').cuda()
+    haar = HaarPSI().cuda()
     # pyqa_psnr = PSNR()
     # pyqa_ssim = SSIM().cuda()
     model_path = f"./experiments/{opt['name']}/weights"
@@ -110,16 +111,18 @@ if __name__ == "__main__":
                 sr2_cuda = to_CHW_cuda(sr2)
                 sr_psnr1 = np.mean(psnr(sr1, hr1))
                 sr_psnr2 = np.mean(psnr(sr2, hr2))
-                sr_ssim1 = cal_ssim(sr1, hr1)
-                sr_ssim2 = cal_ssim(sr2, hr2)
-                sr_ms_ssim1 = cal_ms_ssim(sr1, hr1)
-                sr_ms_ssim2 = cal_ms_ssim(sr2, hr2)
+                sr_ssim1 = cal_ssim(sr1_cuda, hr1_cuda).item()
+                sr_ssim2 = cal_ssim(sr2_cuda, hr2_cuda).item()
+                sr_ms_ssim1 = cal_ms_ssim(sr1_cuda, hr1_cuda).item()
+                sr_ms_ssim2 = cal_ms_ssim(sr2_cuda, hr2_cuda).item()
+                sr_haar1 = haar(sr1_cuda, hr1_cuda).item()
+                sr_haar2 = haar(sr2_cuda, hr2_cuda).item()
                 sr_lpips_vgg1 = lpips_vgg(sr1_cuda, hr1_cuda).item()
                 sr_lpips_vgg2 = lpips_vgg(sr2_cuda, hr2_cuda).item()
                 sr_lpips_alex1 = lpips_alex(sr1_cuda, hr1_cuda).item()
                 sr_lpips_alex2 = lpips_alex(sr2_cuda, hr2_cuda).item()
-                log_file.write(f",im{target_frame+0},{sr_psnr1},{sr_ssim1},{sr_ms_ssim1},{sr_lpips_alex1},{sr_lpips_vgg1}\n")
-                log_file.write(f",im{target_frame+1},{sr_psnr2},{sr_ssim2},{sr_ms_ssim2},{sr_lpips_alex2},{sr_lpips_vgg2}\n")
+                log_file.write(f",im{target_frame+0},{sr_psnr1},{sr_ssim1},{sr_ms_ssim1},{sr_haar1},{sr_lpips_alex1},{sr_lpips_vgg1}\n")
+                log_file.write(f",im{target_frame+1},{sr_psnr2},{sr_ssim2},{sr_ms_ssim2},{sr_haar2},{sr_lpips_alex2},{sr_lpips_vgg2}\n")
                 cv2.imwrite(f"{save_path}/im{target_frame+0}.png", sr1[...,::-1])
                 cv2.imwrite(f"{save_path}/im{target_frame+1}.png", sr2[...,::-1])
                 
@@ -127,11 +130,12 @@ if __name__ == "__main__":
             hr3_cuda = to_CHW_cuda(hr3)
             sr3 = np.round(output[:, :, 6:9]).astype('uint8')
             sr3_cuda = to_CHW_cuda(sr3)
+            sr_psnr3 = np.mean(psnr(sr3, hr3))
+            sr_ssim3 = cal_ssim(sr3_cuda, hr3_cuda).item()
+            sr_ms_ssim3 = cal_ms_ssim(sr3_cuda, hr3_cuda).item()
+            sr_haar3 = haar(sr3_cuda, hr3_cuda).item()
             sr_lpips_alex3 = lpips_alex(sr3_cuda, hr3_cuda).item()
             sr_lpips_vgg3 = lpips_vgg(sr3_cuda, hr3_cuda).item()
-            sr_psnr3 = np.mean(psnr(sr3, hr3))
-            sr_ssim3 = cal_ssim(sr3, hr3)
-            sr_ms_ssim3 = cal_ms_ssim(hr3, sr3)
-            log_file.write(f",im{target_frame+2},{sr_psnr3},{sr_ssim3},{sr_ms_ssim3},{sr_lpips_alex3},{sr_lpips_vgg3}\n")
+            log_file.write(f",im{target_frame+2},{sr_psnr3},{sr_ssim3},{sr_ms_ssim3},{sr_haar3},{sr_lpips_alex3},{sr_lpips_vgg3}\n")
             cv2.imwrite(f"{save_path}/im{target_frame+2}.png", sr3[...,::-1])
         log_file.close()

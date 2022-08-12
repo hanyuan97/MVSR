@@ -1,6 +1,6 @@
 import numpy as np
 import cv2
-from utils.metrics import cal_ssim, cal_ms_ssim, psnr
+from utils.metrics import convert_cal_ssim, convert_cal_ms_ssim, psnr
 import os
 import argparse
 from tqdm import tqdm
@@ -30,8 +30,8 @@ if __name__ == "__main__":
             lr1 = cv2.resize(lr1, (448, 256))
             hr1 = cv2.imread(f"{hr_path}/im{target_frame}.png")
             lr_psnr1 = np.mean(psnr(hr1, lr1))
-            lr_ssim1 = cal_ssim(hr1, lr1)
-            lr_ms_ssim1 = cal_ms_ssim(hr1, lr1)            
+            lr_ssim1 = convert_cal_ssim(hr1, lr1)
+            lr_ms_ssim1 = convert_cal_ms_ssim(hr1, lr1)            
             log_file.write(f",im{target_frame},{lr_psnr1},{lr_ssim1},{lr_ms_ssim1}\n")
 
     log_file.close()
