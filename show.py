@@ -1,9 +1,7 @@
 import torch
 import numpy as np
 from models.SRX264 import SRX264v1
-import matplotlib.pyplot as plt
 import cv2
-from utils.jpeg import JPEG
 from utils.metrics import cal_ssim, cal_ms_ssim, psnr
 import os
 import argparse
@@ -33,10 +31,9 @@ if __name__ == "__main__":
     
     train_on_gpu = torch.cuda.is_available()
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
     
-    path = "../dataset/vimeo90k"
-    test_txt = open(f"{path}/sep_testlist.txt", "r")
+    path = opt['datasets']['test']['path']
+    test_txt = open(opt['datasets']['test']['txt_path'], "r")
     test_list = [i[:-1] for i in test_txt.readlines()]
     if args.less:
         test_list = ["00002/0025"]

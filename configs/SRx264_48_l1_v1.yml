@@ -16,6 +16,13 @@ datasets:
     batch_size: 16
     val_batch_size: 12
     color: RGB
+  test:
+    name: vimeo90k
+    path: ../dataset/vimeo90k
+    txt_path: ../dataset/vimeo90k/sep_testlist.txt
+    lr_dir: ../dataset/vimeo90k/lr
+    hr_dir: ../dataset/vimeo90k/hr
+    batch_size: 16
   
 network_G:
   net: SRX264
