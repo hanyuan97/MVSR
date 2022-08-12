@@ -75,7 +75,7 @@ def init(args, opt):
             print(weight_path)
             net.load_state_dict(torch.load(weight_path))
         else:
-            checkpoint = torch.load(torch.load(weight_path))
+            checkpoint = torch.load(weight_path)
             net.load_state_dict(checkpoint['model_state_dict'])
             optimizer_g.load_state_dict(checkpoint['optimizer_state_dict'])
             
