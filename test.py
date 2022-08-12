@@ -42,7 +42,7 @@ if __name__ == "__main__":
     lr_dir = opt['datasets']['train']['lr_dir']
     hr_dir = opt['datasets']['train']['hr_dir']
     
-    log_file = open(f"experiments/{opt['name']}/{args.maps}.csv", "w")
+    log_file = open(f"experiments/{opt['name']}/test/{args.batch}.csv", "w")
     
     if opt['network_G']['net'] == 'SRX264':
         if opt['network_G']['version'] == 'v1':
