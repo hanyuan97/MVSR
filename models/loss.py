@@ -62,6 +62,8 @@ class MVLoss(nn.Module):
         hr_copy[:,3:6,...] = hr_copy[:,3:6,...] * (mv2>0)
         hr_copy[:,6:9,...] = hr_copy[:,6:9,...] * (mv3>0)
         loss = self.loss(sr_copy, hr_copy)
+        del hr_copy
+        del sr_copy
         return loss
 
 class VGGFeatureExtractor(nn.Module):
