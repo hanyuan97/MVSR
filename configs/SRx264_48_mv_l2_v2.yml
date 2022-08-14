@@ -47,3 +47,5 @@ train:
   feature_weight: 1
   feature_criterion: l2
   gan_weight: !!float 5e-3
+  mv_loss: false
+  mv_weight: !!float 2e-2

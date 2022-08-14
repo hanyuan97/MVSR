@@ -7,7 +7,7 @@ import torch.optim as optim
 import torch.nn as nn
 import numpy as np
 from torch.utils.data import DataLoader, random_split, Subset
-from models.loss import GANLoss, VGGFeatureExtractor
+from models.loss import GANLoss, VGGFeatureExtractor, MVLoss
 from dataset import SRDataset
 from tqdm import tqdm
 import yaml
@@ -94,7 +94,7 @@ def init_d(args, opt):
         if args.old:
             net_d.load_state_dict(torch.load(f"{model_path}/model_d_{args.resume}.pth"))
         else:
-            checkpoint = torch.load(torch.load(f"{model_path}/model_d_{args.resume}.pth"))
+            checkpoint = torch.load(f"{model_path}/model_d_{args.resume}.pth")
             net_d.load_state_dict(checkpoint['model_state_dict'])
             optimizer_d.load_state_dict(checkpoint['optimizer_state_dict'])
         
@@ -106,14 +106,14 @@ def train(training_loader, validation_loader, log_file, args, opt):
     multiple = opt['train']['multiple']
     model_path = f"./experiments/{opt['name']}/weights"
     gan = opt['gan']
+    use_mv_loss = opt['train']['mv_loss']
     for epoch in range(args.resume + 1, EPOCH+1):
         print(f"Epoch: {epoch}/{EPOCH}")
         net.train()
         if gan:
             net_d.train()
-            train_loss_g, train_loss_pix, train_loss_fea, train_loss_gan, train_loss_d = train_one_epoch(epoch, gan, multiple)
-        else:
-            train_loss_g, train_loss_pix, train_loss_fea, train_loss_d = train_one_epoch(epoch, gan, multiple)
+            
+        train_loss_g, train_loss_pix, train_loss_fea, train_loss_mv, train_loss_gan, train_loss_d = train_one_epoch(epoch, gan, use_mv_loss, multiple)
         net.eval()
         if gan:
             net_d.eval()
@@ -122,48 +122,45 @@ def train(training_loader, validation_loader, log_file, args, opt):
         train_loss_g = train_loss_g / len(training_loader.dataset)
         train_loss_pix = train_loss_pix / len(training_loader.dataset)
         train_loss_fea = train_loss_fea / len(training_loader.dataset)
+        train_loss_mv = train_loss_mv / len(training_loader.dataset)
         train_loss_d = train_loss_d / len(training_loader.dataset)
         val_loss_g = val_loss_g / len(validation_loader.dataset)
         val_loss_d = val_loss_d / len(validation_loader.dataset)
+        save_model_path = f"./{model_path}/model_{epoch}.pth"
         if gan:
-            torch.save({'epoch': epoch, 
-                        'model_state_dict': net.state_dict(),
-                        'optimizer_state_dict': optimizer_g.state_dict(),
-                        'train_loss': train_loss_g,
-                        'pix_loss': train_loss_pix,
-                        'fea_loss': train_loss_fea,
-                        'gan_loss': train_loss_gan,
-                        'val_loss': val_loss_g
-                        }, f"./{model_path}/model_g_{epoch}.pth")
+            save_model_path = f"./{model_path}/model_g_{epoch}.pth"
             torch.save({'epoch': epoch, 
                         'model_state_dict': net_d.state_dict(),
                         'optimizer_state_dict': optimizer_d.state_dict(),
                         'train_loss': train_loss_d,
                         'val_loss': val_loss_d
                         }, f"./{model_path}/model_d_{epoch}.pth")
-            print(f"Training loss: pix: {train_loss_pix:.4f}, fea: {train_loss_fea:.4f}, gan: {train_loss_gan:.4f}, total: {train_loss_g:.4f} \tValidation Loss: {val_loss_g:.4f}, {val_loss_d:.6f}")
-            log_file.write(f"{train_loss_g},{train_loss_pix},{train_loss_fea},{train_loss_gan},{train_loss_d},{val_loss_g},{val_loss_d}\n")
+            print(f"Training loss: pix: {train_loss_pix:.4f}, mv: {train_loss_mv:.4f}, fea: {train_loss_fea:.4f}, gan: {train_loss_gan:.4f}, total: {train_loss_g:.4f} \tValidation Loss: {val_loss_g:.4f}, {val_loss_d:.6f}")
+            
         else:
-            torch.save({'epoch': epoch, 
-                        'model_state_dict': net.state_dict(),
-                        'optimizer_state_dict': optimizer_g.state_dict(),
-                        'train_loss': train_loss_g,
-                        'pix_loss': train_loss_pix,
-                        'fea_loss': train_loss_fea,
-                        'val_loss': val_loss_g
-                        }, f"./{model_path}/model_{epoch}.pth")
-            print(f"Training loss: pix: {train_loss_pix:.4f}, fea: {train_loss_fea:.4f}, total: {train_loss_g:.4f} \tValidation Loss: {val_loss_g:.4f}")
-            log_file.write(f"{train_loss_g},{train_loss_pix},{train_loss_fea},{val_loss_g}\n")
-    
+            print(f"Training loss: pix: {train_loss_pix:.4f}, mv: {train_loss_mv:.4f}, fea: {train_loss_fea:.4f}, total: {train_loss_g:.4f} \tValidation Loss: {val_loss_g:.4f}")
+        
+        torch.save({'epoch': epoch, 
+            'model_state_dict': net.state_dict(),
+            'optimizer_state_dict': optimizer_g.state_dict(),
+            'train_loss': train_loss_g,
+            'pix_loss': train_loss_pix,
+            'fea_loss': train_loss_fea,
+            'mv_loss': train_loss_mv,
+            'gan_loss': train_loss_gan,
+            'val_loss': val_loss_g
+            }, save_model_path)
+        log_file.write(f"{train_loss_g},{train_loss_pix},{train_loss_fea},{train_loss_mv},{train_loss_gan},{train_loss_d},{val_loss_g},{val_loss_d}\n")
     log_file.close()
     return net
     
-def train_one_epoch(epoch_index, is_gan=False, multiple=1):
+def train_one_epoch(epoch_index, is_gan=False, use_mv_loss=False, multiple=1):
     running_loss_g = 0.
     running_loss_d = 0.
     running_loss_pix = 0.
     running_loss_fea = 0.
     running_loss_gan = 0.
+    running_loss_mv = 0.
     last_loss = 0.
     for data, real_H in tqdm(training_loader):
         data, real_H = data.to(device, dtype=torch.float), real_H.to(device, dtype=torch.float)
@@ -187,7 +184,11 @@ def train_one_epoch(epoch_index, is_gan=False, multiple=1):
                         cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
             running_loss_gan += loss_gan.item()
             loss_g += gan_w * loss_gan
-        
+            
+        if use_mv_loss:
+            loss_mv = mv_loss_fn(data, fake_H*multiple, real_H*multiple)
+            loss_g += mv_w * loss_mv
+            running_loss_mv += loss_mv
         
         loss_g.backward()
         optimizer_g.step()
@@ -205,10 +206,9 @@ def train_one_epoch(epoch_index, is_gan=False, multiple=1):
             loss_d.backward()
             optimizer_d.step()
             running_loss_d += loss_d.item()
-    if is_gan:
-        return running_loss_g, running_loss_pix, running_loss_fea, running_loss_gan, running_loss_d
-    else:
-        return running_loss_g, running_loss_pix, running_loss_fea, running_loss_d
+    
+    return running_loss_g, running_loss_pix, running_loss_fea, running_loss_mv, running_loss_gan, running_loss_d
+    
 def val_one_epoch(epoch_index, is_gan=False, multiple=1):
     running_loss_g = 0.
     running_loss_d = 0.
@@ -242,6 +242,8 @@ if __name__ == "__main__":
     model_path = f"./experiments/{opt['name']}/weights"
     pix_w = opt['train']['pixel_weight']
     gan_w = opt['train']['gan_weight']
+    mv_w = opt['train']['mv_weight']
+    mv_loss_fn = MVLoss().to(device)
     
     net, net_f, pixel_loss_fn, feature_loss_fn, optimizer_g, training_loader, validation_loader, log_file = init(args, opt)
     if opt['gan']:

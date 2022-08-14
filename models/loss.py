@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchvision
+import cv2
 
 # Define GAN loss: [vanilla | lsgan | wgan-gp]
 class GANLoss(nn.Module):
@@ -37,6 +39,30 @@ class GANLoss(nn.Module):
         loss = self.loss(input, target_label)
         return loss
 
+class MVLoss(nn.Module):
+    def __init__(self) -> None:
+        super(MVLoss, self).__init__()
+        self.loss = nn.MSELoss()
+    def forward(self, lr, sr, hr):
+        resize = F.interpolate(lr, size=(256, 448))
+        mv2 = (torch.abs(resize[:,3:4,...]) + torch.abs(resize[:,3:4,...])) / 2
+        mv3 = (torch.abs(resize[:,8:9,...]) + torch.abs(resize[:,8:9,...])) / 2
+        sr_copy = sr.clone()
+        hr_copy = hr.clone()
+        # mv2_np = mv2[0].cpu().detach().numpy().transpose(1,2,0)*255
+        # test = hr_copy[0,0:3,...] * (mv2[0]>0)
+        # test = test.cpu().detach().numpy().transpose(1,2,0)
+        # print(test.shape)
+        # cv2.imwrite("test.png", test)
+        # cv2.imwrite("mv.png", mv2_np)
+        sr_copy[:,0:3,...] = sr_copy[:,0:3,...] * (mv2>0)
+        sr_copy[:,3:6,...] = sr_copy[:,3:6,...] * (mv2>0)
+        sr_copy[:,6:9,...] = sr_copy[:,6:9,...] * (mv3>0)
+        hr_copy[:,0:3,...] = hr_copy[:,0:3,...] * (mv2>0)
+        hr_copy[:,3:6,...] = hr_copy[:,3:6,...] * (mv2>0)
+        hr_copy[:,6:9,...] = hr_copy[:,6:9,...] * (mv3>0)
+        loss = self.loss(sr_copy, hr_copy)
+        return loss
 
 class VGGFeatureExtractor(nn.Module):
     def __init__(self, feature_layer=34, use_bn=False, use_input_norm=True,
