@@ -188,7 +188,7 @@ def train_one_epoch(epoch_index, is_gan=False, use_mv_loss=False, multiple=1):
         if use_mv_loss:
             loss_mv = mv_loss_fn(data, fake_H*multiple, real_H*multiple)
             loss_g += mv_w * loss_mv
-            running_loss_mv += loss_mv
+            running_loss_mv += loss_mv.item()
         
         loss_g.backward()
         optimizer_g.step()
