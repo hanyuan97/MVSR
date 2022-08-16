@@ -69,7 +69,7 @@ if __name__ == "__main__":
             os.mkdir(f"{save_path}/{save_paths[1]}/{args.batch}")
         save_path = f"{save_path}/{save_paths[1]}/{args.batch}"
         log_file = open(f"{save_path}/{opt['name']}_{args.batch}.csv", "w")
-        log_file.write("target,frame,sr_psnr,sr_ssim,sr_ms_ssim,sr_lpips_alex,sr_lpips_vgg\n")
+        log_file.write("target,frame,sr_psnr,sr_ssim,sr_ms_ssim_sr_haar,sr_lpips_alex,sr_lpips_vgg\n")
         target_frames = [1, 4, 5]
         lr_path = f"../dataset/vimeo90k/lr/{i}"
         hr_path = f"../dataset/vimeo90k/hr/{i}"

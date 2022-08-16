@@ -1,4 +1,4 @@
-name: SRx264_mvloss_v2
+name: SRx264_mvloss_gan_v2
 discription: SRx264, mv, fm 48
 scale_factor: 2
 mv: true
