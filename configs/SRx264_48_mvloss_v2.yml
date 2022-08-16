@@ -1,8 +1,8 @@
-name: SRx264_mv_gan_l2_v1
-discription: SRx264, mv, gan, fm 48
+name: SRx264_mvloss_v2
+discription: SRx264, mv, fm 48
 scale_factor: 2
 mv: true
-gan: true
+gan: false
 
 datasets: 
   train:
@@ -26,7 +26,7 @@ datasets:
 
 network_G:
   net: SRX264
-  version: v1
+  version: v2
   feature_maps: 48
   in_nc: 13
   out_nc: 9
@@ -38,15 +38,15 @@ network_D:
   nLayer: 3
 
 train:
-  epoch: 20
+  epoch: 10
   multiple: 255
   lr_G: !!float 1e-4
   lr_D: !!float 1e-4
   pixel_weight: !!float 1e-2
-  pixel_criterion: l2
+  pixel_criterion: l1
   feature_weight: 1
-  feature_criterion: l2
+  feature_criterion: l1
   gan_weight: !!float 5e-3
-  mix_loss: false
-  mv_loss: false
+  mix_loss: true
+  mv_loss: true
   mv_weight: !!float 2e-2

@@ -45,8 +45,8 @@ class MVLoss(nn.Module):
         self.loss = nn.MSELoss()
     def forward(self, lr, sr, hr):
         resize = F.interpolate(lr, size=(256, 448))
-        mv2 = (torch.abs(resize[:,3:4,...]) + torch.abs(resize[:,3:4,...])) / 2
-        mv3 = (torch.abs(resize[:,8:9,...]) + torch.abs(resize[:,8:9,...])) / 2
+        mv2 = torch.sqrt(torch.pow(resize[:,3:4,...], 2) + torch.pow(resize[:,3:4,...], 2))
+        mv3 = torch.sqrt(torch.pow(resize[:,8:9,...], 2) + torch.pow(resize[:,8:9,...], 2))
         sr_copy = sr.clone()
         hr_copy = hr.clone()
         # mv2_np = mv2[0].cpu().detach().numpy().transpose(1,2,0)*255
@@ -64,6 +64,42 @@ class MVLoss(nn.Module):
         loss = self.loss(sr_copy, hr_copy)
         del hr_copy, sr_copy, resize, mv2, mv3
         return loss
+
+class MVLoss2(nn.Module):
+    def __init__(self) -> None:
+        super(MVLoss2, self).__init__()
+        self.mv_loss = nn.MSELoss()
+        self.zero_mv_loss = nn.L1Loss()
+    def forward(self, lr, sr, hr):
+        resize = F.interpolate(lr, size=(256, 448))
+        mv2 = torch.sqrt(torch.pow(resize[:,3:4,...], 2) + torch.pow(resize[:,3:4,...], 2))
+        mv3 = torch.sqrt(torch.pow(resize[:,8:9,...], 2) + torch.pow(resize[:,8:9,...], 2))
+        sr_mv = sr.clone()
+        hr_mv = hr.clone()
+        sr_zero_mv = sr.clone()
+        hr_zero_mv = hr.clone()
+        # mv2_np = mv2[0].cpu().detach().numpy().transpose(1,2,0)*255
+        # test = hr_copy[0,0:3,...] * (mv2[0]>0)
+        # test = test.cpu().detach().numpy().transpose(1,2,0)
+        # print(test.shape)
+        # cv2.imwrite("test.png", test)
+        # cv2.imwrite("mv.png", mv2_np)
+        sr_mv[:,0:3,...] = sr_mv[:,0:3,...] * (mv2>0)
+        sr_mv[:,3:6,...] = sr_mv[:,3:6,...] * (mv2>0)
+        sr_mv[:,6:9,...] = sr_mv[:,6:9,...] * (mv3>0)
+        hr_mv[:,0:3,...] = hr_mv[:,0:3,...] * (mv2>0)
+        hr_mv[:,3:6,...] = hr_mv[:,3:6,...] * (mv2>0)
+        hr_mv[:,6:9,...] = hr_mv[:,6:9,...] * (mv3>0)
+        sr_zero_mv[:,0:3,...] = sr_zero_mv[:,0:3,...] * (mv2==0)
+        sr_zero_mv[:,3:6,...] = sr_zero_mv[:,3:6,...] * (mv2==0)
+        sr_zero_mv[:,6:9,...] = sr_zero_mv[:,6:9,...] * (mv3==0)
+        hr_zero_mv[:,0:3,...] = hr_zero_mv[:,0:3,...] * (mv2==0)
+        hr_zero_mv[:,3:6,...] = hr_zero_mv[:,3:6,...] * (mv2==0)
+        hr_zero_mv[:,6:9,...] = hr_zero_mv[:,6:9,...] * (mv3==0)
+        mv_loss = self.mv_loss(sr_mv, hr_mv)
+        zero_mv_loss = self.zero_mv_loss(sr_zero_mv, hr_zero_mv)
+        del hr_mv, sr_mv, hr_zero_mv, sr_zero_mv, resize, mv2, mv3
+        return zero_mv_loss, mv_loss
 
 class VGGFeatureExtractor(nn.Module):
     def __init__(self, feature_layer=34, use_bn=False, use_input_norm=True,

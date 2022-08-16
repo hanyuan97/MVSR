@@ -7,7 +7,7 @@ import torch.optim as optim
 import torch.nn as nn
 import numpy as np
 from torch.utils.data import DataLoader, random_split, Subset
-from models.loss import GANLoss, VGGFeatureExtractor, MVLoss
+from models.loss import GANLoss, VGGFeatureExtractor, MVLoss, MVLoss2
 from dataset import SRDataset
 from tqdm import tqdm
 import yaml
@@ -154,7 +154,7 @@ def train(training_loader, validation_loader, log_file, args, opt):
     log_file.close()
     return net
     
-def train_one_epoch(epoch_index, is_gan=False, use_mv_loss=False, multiple=1):
+def train_one_epoch(epoch_index, is_gan=False, use_mv_loss=False, mix_loss=False, multiple=1):
     running_loss_g = 0.
     running_loss_d = 0.
     running_loss_pix = 0.
@@ -171,8 +171,18 @@ def train_one_epoch(epoch_index, is_gan=False, use_mv_loss=False, multiple=1):
                 p.requires_grad = False
         fake_H = net(data)
         # if epoch_index > d_init_iter:
-        loss_pix = pixel_loss_fn(fake_H*multiple, real_H*multiple)
-        loss_g = pix_w * loss_pix
+        if mix_loss:
+            loss_pix, loss_mv = mix_loss_fn(data, fake_H*multiple, real_H*multiple)
+            loss_g = mv_w * (loss_pix + loss_mv)
+            running_loss_mv += loss_mv.item()
+        else:
+            loss_pix = pixel_loss_fn(fake_H*multiple, real_H*multiple)
+            loss_g = pix_w * loss_pix
+            if use_mv_loss:
+                loss_mv = mv_loss_fn(data, fake_H*multiple, real_H*multiple)
+                loss_g += mv_w * loss_mv
+                running_loss_mv += loss_mv.item()
+        
         real_fea = net_f(real_H.view(-1, 3, 256, 448)).detach()
         fake_fea = net_f(fake_H.view(-1, 3, 256, 448))        
         loss_fea = feature_loss_fn(fake_fea, real_fea)
@@ -184,11 +194,6 @@ def train_one_epoch(epoch_index, is_gan=False, use_mv_loss=False, multiple=1):
                         cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
             running_loss_gan += loss_gan.item()
             loss_g += gan_w * loss_gan
-            
-        if use_mv_loss:
-            loss_mv = mv_loss_fn(data, fake_H*multiple, real_H*multiple)
-            loss_g += mv_w * loss_mv
-            running_loss_mv += loss_mv.item()
         
         loss_g.backward()
         optimizer_g.step()
@@ -244,7 +249,7 @@ if __name__ == "__main__":
     gan_w = opt['train']['gan_weight']
     mv_w = opt['train']['mv_weight']
     mv_loss_fn = MVLoss().to(device)
-    
+    mix_loss_fn = MVLoss2().to(device)
     net, net_f, pixel_loss_fn, feature_loss_fn, optimizer_g, training_loader, validation_loader, log_file = init(args, opt)
     if opt['gan']:
         net_d, optimizer_d, cri_gan = init_d(args, opt)
