@@ -105,20 +105,21 @@ def train(training_loader, validation_loader, log_file, args, opt):
     EPOCH = opt['train']['epoch']
     multiple = opt['train']['multiple']
     model_path = f"./experiments/{opt['name']}/weights"
-    gan = opt['gan']
+    use_gan = opt['gan']
     use_mv_loss = opt['train']['mv_loss']
+    use_mix_loss = opt['train']['mix_loss']
     for epoch in range(args.resume + 1, EPOCH+1):
         print(f"Epoch: {epoch}/{EPOCH}")
         net.train()
-        if gan:
+        if use_gan:
             net_d.train()
             
-        train_loss_g, train_loss_pix, train_loss_fea, train_loss_mv, train_loss_gan, train_loss_d = train_one_epoch(epoch, gan, use_mv_loss, multiple)
+        train_loss_g, train_loss_pix, train_loss_fea, train_loss_mv, train_loss_gan, train_loss_d = train_one_epoch(epoch, use_gan, use_mv_loss, use_mix_loss, multiple)
         net.eval()
-        if gan:
+        if use_gan:
             net_d.eval()
             train_loss_gan = train_loss_gan / len(training_loader.dataset)
-        val_loss_g, val_loss_d = val_one_epoch(epoch, gan, multiple)
+        val_loss_g, val_loss_d = val_one_epoch(epoch, use_gan, multiple)
         train_loss_g = train_loss_g / len(training_loader.dataset)
         train_loss_pix = train_loss_pix / len(training_loader.dataset)
         train_loss_fea = train_loss_fea / len(training_loader.dataset)
@@ -127,7 +128,7 @@ def train(training_loader, validation_loader, log_file, args, opt):
         val_loss_g = val_loss_g / len(validation_loader.dataset)
         val_loss_d = val_loss_d / len(validation_loader.dataset)
         save_model_path = f"./{model_path}/model_{epoch}.pth"
-        if gan:
+        if use_gan:
             save_model_path = f"./{model_path}/model_g_{epoch}.pth"
             torch.save({'epoch': epoch, 
                         'model_state_dict': net_d.state_dict(),
@@ -154,7 +155,7 @@ def train(training_loader, validation_loader, log_file, args, opt):
     log_file.close()
     return net
     
-def train_one_epoch(epoch_index, is_gan=False, use_mv_loss=False, mix_loss=False, multiple=1):
+def train_one_epoch(epoch_index, use_gan=False, use_mv_loss=False, mix_loss=False, multiple=1):
     running_loss_g = 0.
     running_loss_d = 0.
     running_loss_pix = 0.
@@ -165,7 +166,7 @@ def train_one_epoch(epoch_index, is_gan=False, use_mv_loss=False, mix_loss=False
     for data, real_H in tqdm(training_loader):
         data, real_H = data.to(device, dtype=torch.float), real_H.to(device, dtype=torch.float)
         optimizer_g.zero_grad()
-        if is_gan:
+        if use_gan:
             optimizer_d.zero_grad()
             for p in net_d.parameters():
                 p.requires_grad = False
@@ -187,7 +188,7 @@ def train_one_epoch(epoch_index, is_gan=False, use_mv_loss=False, mix_loss=False
         fake_fea = net_f(fake_H.view(-1, 3, 256, 448))        
         loss_fea = feature_loss_fn(fake_fea, real_fea)
         loss_g += loss_fea
-        if is_gan:
+        if use_gan:
             pred_g_fake = net_d(fake_H.view(-1, 3, 256, 448))
             pred_d_real = net_d(real_H.view(-1, 3, 256, 448)).detach()
             loss_gan = (cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
@@ -200,7 +201,7 @@ def train_one_epoch(epoch_index, is_gan=False, use_mv_loss=False, mix_loss=False
         running_loss_pix += loss_pix.item()
         running_loss_fea += loss_fea.item()
         running_loss_g += loss_g.item()
-        if is_gan:
+        if use_gan:
             for p in net_d.parameters():
                 p.requires_grad = True
             pred_d_real = net_d(real_H.view(-1, 3, 256, 448))
@@ -214,17 +215,17 @@ def train_one_epoch(epoch_index, is_gan=False, use_mv_loss=False, mix_loss=False
     
     return running_loss_g, running_loss_pix, running_loss_fea, running_loss_mv, running_loss_gan, running_loss_d
     
-def val_one_epoch(epoch_index, is_gan=False, multiple=1):
+def val_one_epoch(epoch_index, use_gan=False, multiple=1):
     running_loss_g = 0.
     running_loss_d = 0.
     for data, real_H in tqdm(validation_loader):
         data, real_H = data.to(device, dtype=torch.float), real_H.to(device, dtype=torch.float)
         with torch.no_grad():
             fake_H = net(data)
-            if is_gan:
+            if use_gan:
                 pred_d_real = net_d(real_H.view(-1, 3, 256, 448))
                 pred_d_fake = net_d(fake_H.detach().view(-1, 3, 256, 448))
-        if is_gan:    
+        if use_gan:    
             l_d_real = cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
             l_d_fake = cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
             loss_d = (l_d_real + l_d_fake) / 2
