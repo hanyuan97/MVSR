@@ -4,6 +4,7 @@ from models.SRX264 import SRX264v1
 import cv2
 from utils.metrics import psnr, cal_ssim, cal_ms_ssim, to_CHW_cuda
 import os
+import time
 import argparse
 import yaml
 from tqdm import tqdm
@@ -67,10 +68,17 @@ if __name__ == "__main__":
         net.load_state_dict(checkpoint['model_state_dict'])
     
     net.eval()
-
+    net(torch.rand((1, opt['network_G']['in_nc'], 128, 224)).cuda())
+    total_psnr = 0.0
+    total_ssim = 0.0
+    total_ms_ssim = 0.0
+    total_haar = 0.0
+    total_lpips_alex = 0.0
+    total_lpips_vgg = 0.0
+    total_exec_time = 0.0
     # test_set = load_file("data", filename)
     # print(len(dctDataset))
-    log_file.write("target,frame,sr_psnr,sr_ssim,sr_ms_ssim,sr_haar,sr_lpips_alex,sr_lpips_vgg\n")
+    log_file.write("target,frame,sr_psnr,sr_ssim,sr_ms_ssim,sr_haar,sr_lpips_alex,sr_lpips_vgg,exec_time\n")
     for i in tqdm(test_list):
         # save_paths = i.split('/')
         # save_path = f"experiments/{opt['name']}/{save_paths[0]}"
@@ -87,6 +95,7 @@ if __name__ == "__main__":
         hr_path = f"{hr_dir}/{i}"
         log_file.write(f"{i}")
         for target_frame in target_frames:
+            t0 = time.time()
             lr1 = cv2.imread(f"{lr_path}/im{target_frame}.png")[...,::-1]
             lr2 = cv2.imread(f"{lr_path}/im{target_frame+1}.png")[...,::-1]
             lr3 = cv2.imread(f"{lr_path}/im{target_frame+2}.png")[...,::-1]
@@ -129,6 +138,12 @@ if __name__ == "__main__":
                 sr_lpips_vgg2 = lpips_vgg(sr2_cuda, hr2_cuda).item()
                 sr_lpips_alex1 = lpips_alex(sr1_cuda, hr1_cuda).item()
                 sr_lpips_alex2 = lpips_alex(sr2_cuda, hr2_cuda).item()
+                total_psnr += sr_psnr1+sr_psnr2
+                total_ssim += sr_ssim1+sr_ssim2
+                total_ms_ssim += sr_ms_ssim1+sr_ms_ssim2
+                total_haar += sr_haar1+sr_haar2
+                total_lpips_alex += sr_lpips_alex1+sr_lpips_alex2
+                total_lpips_vgg += sr_lpips_vgg1+sr_lpips_vgg2
                 log_file.write(f",im{target_frame+0},{sr_psnr1},{sr_ssim1},{sr_ms_ssim1},{sr_haar1},{sr_lpips_alex1},{sr_lpips_vgg1}\n")
                 log_file.write(f",im{target_frame+1},{sr_psnr2},{sr_ssim2},{sr_ms_ssim2},{sr_haar2},{sr_lpips_alex2},{sr_lpips_vgg2}\n")
                 
@@ -143,6 +158,13 @@ if __name__ == "__main__":
             sr_haar3 = haar(sr3_cuda, hr3_cuda).item()
             sr_lpips_alex3 = lpips_alex(sr3_cuda, hr3_cuda).item()
             sr_lpips_vgg3 = lpips_vgg(sr3_cuda, hr3_cuda).item()
+            total_psnr += sr_psnr3
+            total_ssim += sr_ssim3
+            total_ms_ssim += sr_ms_ssim3
+            total_haar += sr_haar3
+            total_lpips_alex += sr_lpips_alex3
+            total_lpips_vgg += sr_lpips_vgg3
             log_file.write(f",im{target_frame+2},{sr_psnr3},{sr_ssim3},{sr_ms_ssim3},{sr_haar3},{sr_lpips_alex3},{sr_lpips_vgg3}\n")
-    
+    count = len(test_list)*7
+    log_file.write(f",,{total_psnr/count},{total_ssim/count},{total_ms_ssim/count},{total_haar/count},{total_lpips_alex/count},{total_lpips_vgg/count},{total_exec_time/count}\n")
     log_file.close()

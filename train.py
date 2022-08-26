@@ -1,5 +1,4 @@
 import argparse
-from calendar import EPOCH
 import os
 import cv2
 import torch
