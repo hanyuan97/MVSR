@@ -115,7 +115,8 @@ if __name__ == "__main__":
             output = output.transpose(1, 2, 0)
             output[np.where(output > 255)] = 255
             output[np.where(output < 0)] = 0
-            
+            t1 = time.time()
+            exec_time = t1-t0
             # BGR
             if target_frame != 5:
                 hr1 = cv2.imread(f"{hr_path}/im{target_frame}.png")[...,::-1]
@@ -164,7 +165,7 @@ if __name__ == "__main__":
             total_haar += sr_haar3
             total_lpips_alex += sr_lpips_alex3
             total_lpips_vgg += sr_lpips_vgg3
-            log_file.write(f",im{target_frame+2},{sr_psnr3},{sr_ssim3},{sr_ms_ssim3},{sr_haar3},{sr_lpips_alex3},{sr_lpips_vgg3}\n")
+            log_file.write(f",im{target_frame+2},{sr_psnr3},{sr_ssim3},{sr_ms_ssim3},{sr_haar3},{sr_lpips_alex3},{sr_lpips_vgg3},{exec_time}\n")
     count = len(test_list)*7
     log_file.write(f",,{total_psnr/count},{total_ssim/count},{total_ms_ssim/count},{total_haar/count},{total_lpips_alex/count},{total_lpips_vgg/count},{total_exec_time/count}\n")
     log_file.close()
